@@ -108,7 +108,7 @@ const crearFactura = async (facturaData, file, userId) => {
 /**
  * Crea una nueva factura con múltiples archivos iniciales
  */
-const crearFacturaConMultiplesArchivos = async (facturaData, files, tiposDocumento, userId, usuarioAprobadorRuta2Id = null) => {
+const crearFacturaConMultiplesArchivos = async (facturaData, files, tiposDocumento, userId, rolAprobadorRuta2 = null) => {
     const { numero_factura, nit_proveedor, fecha_emision, monto, concepto } = facturaData;
     const client = await db.connect();
     const UPLOAD_DIR = 'D:\\FacturasClinica';
@@ -122,24 +122,12 @@ const crearFacturaConMultiplesArchivos = async (facturaData, files, tiposDocumen
         if (proveedorRes.rows.length === 0) throw new Error(`El proveedor con NIT ${nit_proveedor} no existe en la base de datos.`);
         const proveedorId = proveedorRes.rows[0].id;
 
-        // 2. Determinar Estado Inicial basado en el aprobador de Ruta 2
+        // 2. Determinar Estado Inicial basado en el rol de Ruta 2
         let estadoInicialCodigo = ESTADOS.RUTA_2; // Por defecto (legacy)
 
-        if (usuarioAprobadorRuta2Id) {
-            // Obtener el rol del usuario aprobador
-            const rolAprobadorRes = await client.query(`
-                SELECT r.codigo FROM usuario_roles ur
-                JOIN roles r ON ur.rol_id = r.rol_id
-                WHERE ur.usuario_id = $1 AND r.codigo LIKE 'RUTA_2_%'
-                LIMIT 1
-            `, [usuarioAprobadorRuta2Id]);
-
-            if (rolAprobadorRes.rows.length === 0) {
-                throw new Error('El usuario seleccionado no tiene un rol de Ruta 2 válido.');
-            }
-
-            const rolCodigo = rolAprobadorRes.rows[0].codigo;
-            const estadoMapeado = mapearRolAEstado(rolCodigo);
+        if (rolAprobadorRuta2) {
+            // Usar el rol directamente para mapear al estado
+            const estadoMapeado = mapearRolAEstado(rolAprobadorRuta2);
 
             if (estadoMapeado) {
                 estadoInicialCodigo = estadoMapeado;
@@ -157,12 +145,12 @@ const crearFacturaConMultiplesArchivos = async (facturaData, files, tiposDocumen
         const indexFactura = tiposDocumento.findIndex(tipo => tipo === 'FACTURA');
         const archivoFactura = indexFactura !== -1 ? files[indexFactura] : files[0];
 
-        // 5. Insertar Factura (con usuario_aprobador_ruta2_id)
+        // 5. Insertar Factura (con rol_aprobador_ruta2)
         const insertQuery = `
             INSERT INTO facturas (
                 numero_factura, proveedor_id, fecha_emision, monto, concepto,
                 estado_id, usuario_creacion_id, ruta_id, documento_nombre,
-                usuario_aprobador_ruta2_id
+                rol_aprobador_ruta2
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING factura_id, numero_factura, fecha_emision, monto
@@ -171,7 +159,7 @@ const crearFacturaConMultiplesArchivos = async (facturaData, files, tiposDocumen
         const nuevaFactura = (await client.query(insertQuery, [
             numero_factura, proveedorId, fecha_emision, monto, concepto || null,
             estadoInicialId, userId, rutaId, archivoFactura.filename,
-            usuarioAprobadorRuta2Id
+            rolAprobadorRuta2
         ])).rows[0];
 
         // 6. Guardar TODOS los archivos en factura_documentos
@@ -587,7 +575,7 @@ const listarFacturas = async (filtros, userId) => {
         let query = `
             SELECT 
                 f.factura_id, f.numero_factura, f.fecha_emision, f.monto, f.concepto,
-                f.documento_nombre, f.is_anulada, f.usuario_aprobador_ruta2_id,
+                f.documento_nombre, f.is_anulada, f.rol_aprobador_ruta2,
                 p.nombre AS proveedor_nombre,
                 e.nombre AS estado_nombre, e.codigo AS estado_codigo,
                 u.nombre AS usuario_creacion_nombre
@@ -600,40 +588,68 @@ const listarFacturas = async (filtros, userId) => {
         const params = [];
         let pCount = 1;
 
-        // Filtrar según rol (mostrar solo pendientes)
-        // Roles de Ruta 2 especializados
-        const rolesRuta2 = [
-            'RUTA_2',
-            'RUTA_2_CONTROL_INTERNO',
-            'RUTA_2_DIRECCION_MEDICA',
-            'RUTA_2_DIRECCION_FINANCIERA',
-            'RUTA_2_DIRECCION_ADMINISTRATIVA',
-            'RUTA_2_DIRECCION_GENERAL'
-        ];
-
-        const tieneRolRuta2 = roles.some(rol => rolesRuta2.includes(rol));
-
-        if (tieneRolRuta2 && !roles.includes('SUPER_ADMIN')) {
-            // Filtrar por estados de Ruta 2 Y que el usuario sea el aprobador asignado
-            query += ` AND (
-                e.codigo IN (
-                    'RUTA_2',
-                    'RUTA_2_CONTROL_INTERNO',
-                    'RUTA_2_DIRECCION_MEDICA',
-                    'RUTA_2_DIRECCION_FINANCIERA',
-                    'RUTA_2_DIRECCION_ADMINISTRATIVA',
-                    'RUTA_2_DIRECCION_GENERAL'
-                )
-                AND (f.usuario_aprobador_ruta2_id = $${pCount} OR f.usuario_aprobador_ruta2_id IS NULL)
-            )`;
+        // Filtrar según rol
+        if (roles.includes('SUPER_ADMIN')) {
+            // SUPER_ADMIN ve todas las facturas
+        } else if (roles.includes('RUTA_1') && !roles.some(r => r !== 'RUTA_1' && r !== 'SUPER_ADMIN')) {
+            // RUTA_1 solo ve las facturas que él mismo creó
+            query += ` AND f.usuario_creacion_id = $${pCount}`;
             params.push(userId);
             pCount++;
-        } else if (roles.includes('RUTA_3') && !roles.includes('SUPER_ADMIN')) {
-            query += ` AND e.codigo = 'RUTA_3'`;
-        } else if (roles.includes('RUTA_4') && !roles.includes('SUPER_ADMIN')) {
-            query += ` AND e.codigo = 'RUTA_4'`;
+        } else {
+            // Construir condiciones para cada rol que tenga el usuario
+            const conditions = [];
+
+            // Roles de Ruta 2 especializados
+            const rolesRuta2 = [
+                'RUTA_2',
+                'RUTA_2_CONTROL_INTERNO',
+                'RUTA_2_DIRECCION_MEDICA',
+                'RUTA_2_DIRECCION_FINANCIERA',
+                'RUTA_2_DIRECCION_ADMINISTRATIVA',
+                'RUTA_2_DIRECCION_GENERAL'
+            ];
+
+            // Obtener los roles de Ruta 2 que tiene el usuario
+            const rolesRuta2Usuario = roles.filter(rol => rolesRuta2.includes(rol));
+
+            // Si tiene rol de Ruta 2
+            if (rolesRuta2Usuario.length > 0) {
+                // Filtrar por estados de Ruta 2 donde el rol_aprobador_ruta2 coincida con alguno de sus roles
+                const rolesPlaceholders = rolesRuta2Usuario.map((rol, index) => {
+                    params.push(rol);
+                    return `$${pCount + index}`;
+                }).join(', ');
+
+                conditions.push(`(
+                    e.codigo IN (
+                        'RUTA_2',
+                        'RUTA_2_CONTROL_INTERNO',
+                        'RUTA_2_DIRECCION_MEDICA',
+                        'RUTA_2_DIRECCION_FINANCIERA',
+                        'RUTA_2_DIRECCION_ADMINISTRATIVA',
+                        'RUTA_2_DIRECCION_GENERAL'
+                    )
+                    AND (f.rol_aprobador_ruta2 IN (${rolesPlaceholders}) OR f.rol_aprobador_ruta2 IS NULL)
+                )`);
+                pCount += rolesRuta2Usuario.length;
+            }
+
+            // Si tiene rol de Ruta 3
+            if (roles.includes('RUTA_3')) {
+                conditions.push(`e.codigo = 'RUTA_3'`);
+            }
+
+            // Si tiene rol de Ruta 4
+            if (roles.includes('RUTA_4')) {
+                conditions.push(`e.codigo = 'RUTA_4'`);
+            }
+
+            // Aplicar condiciones con OR
+            if (conditions.length > 0) {
+                query += ` AND (${conditions.join(' OR ')})`;
+            }
         }
-        // SUPER_ADMIN y RUTA_1 ven todas
 
         if (filtros.busqueda) {
             query += ` AND (f.numero_factura ILIKE $${pCount} OR p.nombre ILIKE $${pCount})`;

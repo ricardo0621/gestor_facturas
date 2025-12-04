@@ -52,8 +52,8 @@ const cargarFactura = async (req, res) => {
             });
         }
 
-        // Validar aprobador de Ruta 2 (opcional pero recomendado)
-        const usuarioAprobadorRuta2Id = body.usuario_aprobador_ruta2_id || null;
+        // Validar rol de Ruta 2 (opcional pero recomendado)
+        const rolAprobadorRuta2 = body.rol_aprobador_ruta2 || null;
 
         // Preparar datos de la factura
         const facturaData = {
@@ -64,13 +64,13 @@ const cargarFactura = async (req, res) => {
             concepto: body.concepto
         };
 
-        // Llamar al servicio con el aprobador de Ruta 2
+        // Llamar al servicio con el rol de Ruta 2
         const nuevaFactura = await facturaService.crearFacturaConMultiplesArchivos(
             facturaData,
             files,
             tiposDocumento,
             userId,
-            usuarioAprobadorRuta2Id
+            rolAprobadorRuta2
         );
 
         res.status(201).json({

@@ -678,19 +678,15 @@ async function showCargarFactura() {
         console.error('Error al cargar proveedores:', error);
     }
 
-    // Cargar usuarios de Ruta 2 para el select
-    let aprobadoresOptions = '<option value="">Seleccionar aprobador...</option>';
-    try {
-        const response = await fetchAPI('/usuarios/ruta2');
-        if (response.ok) {
-            const data = await response.json();
-            data.usuarios.forEach(usuario => {
-                aprobadoresOptions += `<option value="${usuario.usuario_id}">${usuario.nombre} - ${usuario.rol_nombre}</option>`;
-            });
-        }
-    } catch (error) {
-        console.error('Error al cargar aprobadores de Ruta 2:', error);
-    }
+    // Cargar roles de Ruta 2 para el select (en lugar de usuarios)
+    const rolesRuta2Options = `
+        <option value="">Seleccionar área...</option>
+        <option value="RUTA_2_CONTROL_INTERNO">Control Interno</option>
+        <option value="RUTA_2_DIRECCION_MEDICA">Dirección Médica</option>
+        <option value="RUTA_2_DIRECCION_FINANCIERA">Dirección Financiera</option>
+        <option value="RUTA_2_DIRECCION_ADMINISTRATIVA">Dirección Administrativa</option>
+        <option value="RUTA_2_DIRECCION_GENERAL">Dirección General</option>
+    `;
 
     document.getElementById('mainContainer').innerHTML = `
         <div class="card" style="max-width: 800px; margin: 0 auto;">
@@ -718,12 +714,12 @@ async function showCargarFactura() {
                         <input type="number" id="monto" class="form-input" required>
                     </div>
                     <div class="form-group" style="grid-column: 1 / -1;">
-                        <label class="form-label">Aprobador de Ruta 2 *</label>
+                        <label class="form-label">Área de Aprobación (Ruta 2) *</label>
                         <select id="aprobadorRuta2" class="form-select" required>
-                            ${aprobadoresOptions}
+                            ${rolesRuta2Options}
                         </select>
                         <small style="display: block; margin-top: 0.5rem; color: var(--color-text-tertiary);">
-                            Selecciona el usuario que debe aprobar esta factura en Ruta 2
+                            Selecciona el área que debe aprobar esta factura
                         </small>
                     </div>
                     <div class="form-group" style="grid-column: 1 / -1;">
@@ -843,10 +839,10 @@ async function handleCargarFactura(e) {
         return;
     }
 
-    // Validar que se haya seleccionado un aprobador de Ruta 2
+    // Validar que se haya seleccionado un área de Ruta 2
     const aprobadorRuta2 = document.getElementById('aprobadorRuta2').value;
     if (!aprobadorRuta2) {
-        showToast('Debes seleccionar un aprobador de Ruta 2', 'error');
+        showToast('Debes seleccionar un área de aprobación para Ruta 2', 'error');
         return;
     }
 
@@ -856,7 +852,7 @@ async function handleCargarFactura(e) {
     formData.append('fecha_emision', document.getElementById('fechaEmision').value);
     formData.append('monto', document.getElementById('monto').value);
     formData.append('concepto', document.getElementById('concepto').value);
-    formData.append('usuario_aprobador_ruta2_id', aprobadorRuta2);
+    formData.append('rol_aprobador_ruta2', aprobadorRuta2);
 
     // Agregar archivos y tipos desde archivosSeleccionados
     for (let i = 0; i < archivosSeleccionados.length; i++) {
