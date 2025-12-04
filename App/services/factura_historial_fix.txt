@@ -1,0 +1,53 @@
+const obtenerHistorialFactura = async (id) => {
+    const client = await db.connect();
+    try {
+        const res = await client.query(`
+            SELECT h.*, 
+                   u.nombre as usuario_nombre, 
+                   u.cargo as usuario_cargo,
+                   u.area as usuario_area,
+                   ea.nombre as estado_anterior, 
+                   en.nombre as estado_nuevo
+            FROM factura_historial h
+            JOIN usuarios u ON h.usuario_id = u.usuario_id
+            LEFT JOIN estados ea ON h.estado_anterior_id = ea.estado_id
+            JOIN estados en ON h.estado_nuevo_id = en.estado_id
+            WHERE h.factura_id = $1
+            ORDER BY h.fecha_transicion DESC
+        `, [id]);
+        return res.rows;
+    } finally {
+        client.release();
+    }
+};
+
+const obtenerEstadisticas = async () => {
+    const client = await db.connect();
+    try {
+        const res = await client.query(`
+            SELECT 
+                COUNT(*) as total,
+                COUNT(CASE WHEN estado_id = (SELECT estado_id FROM estados WHERE codigo='FINALIZADA') THEN 1 END) as finalizadas,
+                COUNT(CASE WHEN is_anulada = TRUE THEN 1 END) as anuladas
+            FROM facturas
+        `);
+        return res.rows[0];
+    } finally {
+        client.release();
+    }
+};
+
+module.exports = {
+    crearFactura,
+    crearFacturaConMultiplesArchivos,
+    procesarFactura,
+    listarFacturas,
+    obtenerFacturaPorId,
+    obtenerHistorialFactura,
+    obtenerEstadisticas,
+    agregarDocumento,
+    listarDocumentos,
+    eliminarDocumento,
+    eliminarFactura,
+    validarEvidenciaPago
+};

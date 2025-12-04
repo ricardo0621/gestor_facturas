@@ -1,0 +1,314 @@
+const db = require('../config/db');
+const bcrypt = require('bcrypt');
+
+/**
+ * Crear un nuevo usuario
+ */
+const crearUsuario = async (datosUsuario) => {
+    const { nombre, email, password, tipo_documento, numero_documento, area, cargo, requiere_evidencia_pago = false } = datosUsuario;
+    const client = await db.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // Verificar si el email ya existe
+        const emailCheck = await client.query('SELECT usuario_id FROM usuarios WHERE email = $1', [email]);
+        if (emailCheck.rows.length > 0) {
+            throw new Error('El email ya está registrado en el sistema.');
+        }
+
+        // Hash de la contraseña
+        const password_hash = await bcrypt.hash(password, 10);
+
+        // Insertar usuario
+        const insertQuery = `
+            INSERT INTO usuarios (nombre, email, password_hash, tipo_documento, numero_documento, area, cargo, requiere_evidencia_pago, is_active)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE)
+            RETURNING usuario_id, nombre, email, tipo_documento, numero_documento, area, cargo, is_active, requiere_evidencia_pago, fecha_registro
+        `;
+        const result = await client.query(insertQuery, [nombre, email, password_hash, tipo_documento, numero_documento, area, cargo, requiere_evidencia_pago]);
+
+        await client.query('COMMIT');
+        return result.rows[0];
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
+};
+
+/**
+ * Listar todos los usuarios con sus roles
+ */
+const listarUsuarios = async () => {
+    const client = await db.connect();
+    try {
+        const query = `
+            SELECT 
+                u.usuario_id, u.nombre, u.email, u.tipo_documento, u.numero_documento, u.area, u.cargo, u.is_active, 
+                u.requiere_evidencia_pago, u.fecha_registro,
+                ARRAY_AGG(r.nombre) FILTER (WHERE r.nombre IS NOT NULL) as roles,
+                ARRAY_AGG(r.codigo) FILTER (WHERE r.codigo IS NOT NULL) as roles_codigos
+            FROM usuarios u
+            LEFT JOIN usuario_roles ur ON u.usuario_id = ur.usuario_id
+            LEFT JOIN roles r ON ur.rol_id = r.rol_id
+            GROUP BY u.usuario_id
+            ORDER BY u.fecha_registro DESC
+        `;
+        const result = await client.query(query);
+        return result.rows;
+    } finally {
+        client.release();
+    }
+};
+
+/**
+ * Obtener un usuario por ID
+ */
+const obtenerUsuarioPorId = async (usuarioId) => {
+    const client = await db.connect();
+    try {
+        const query = `
+            SELECT 
+                u.usuario_id, u.nombre, u.email, u.tipo_documento, u.numero_documento, u.area, u.cargo, u.is_active, 
+                u.requiere_evidencia_pago, u.fecha_registro,
+                ARRAY_AGG(r.rol_id) FILTER (WHERE r.rol_id IS NOT NULL) as roles_ids,
+                ARRAY_AGG(r.nombre) FILTER (WHERE r.nombre IS NOT NULL) as roles,
+                ARRAY_AGG(r.codigo) FILTER (WHERE r.codigo IS NOT NULL) as roles_codigos
+            FROM usuarios u
+            LEFT JOIN usuario_roles ur ON u.usuario_id = ur.usuario_id
+            LEFT JOIN roles r ON ur.rol_id = r.rol_id
+            WHERE u.usuario_id = $1
+            GROUP BY u.usuario_id
+        `;
+        const result = await client.query(query, [usuarioId]);
+
+        if (result.rows.length === 0) {
+            throw new Error('Usuario no encontrado.');
+        }
+
+        return result.rows[0];
+    } finally {
+        client.release();
+    }
+};
+
+/**
+ * Actualizar datos de un usuario
+ */
+const actualizarUsuario = async (usuarioId, datos) => {
+    const { nombre, email, password, tipo_documento, numero_documento, area, cargo, requiere_evidencia_pago } = datos;
+    const client = await db.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // Verificar que el usuario existe
+        const userCheck = await client.query('SELECT usuario_id FROM usuarios WHERE usuario_id = $1', [usuarioId]);
+        if (userCheck.rows.length === 0) {
+            throw new Error('Usuario no encontrado.');
+        }
+
+        // Si se cambia el email, verificar que no esté en uso
+        if (email) {
+            const emailCheck = await client.query(
+                'SELECT usuario_id FROM usuarios WHERE email = $1 AND usuario_id != $2',
+                [email, usuarioId]
+            );
+            if (emailCheck.rows.length > 0) {
+                throw new Error('El email ya está en uso por otro usuario.');
+            }
+        }
+
+        // Construir query dinámicamente
+        const updates = [];
+        const values = [];
+        let paramCount = 1;
+
+        if (nombre) {
+            updates.push(`nombre = $${paramCount}`);
+            values.push(nombre);
+            paramCount++;
+        }
+
+        if (email) {
+            updates.push(`email = $${paramCount}`);
+            values.push(email);
+            paramCount++;
+        }
+
+        if (password) {
+            const password_hash = await bcrypt.hash(password, 10);
+            updates.push(`password_hash = $${paramCount}`);
+            values.push(password_hash);
+            paramCount++;
+        }
+
+        if (requiere_evidencia_pago !== undefined) {
+            updates.push(`requiere_evidencia_pago = $${paramCount}`);
+            values.push(requiere_evidencia_pago);
+            paramCount++;
+        }
+
+        if (tipo_documento) {
+            updates.push(`tipo_documento = $${paramCount}`);
+            values.push(tipo_documento);
+            paramCount++;
+        }
+
+        if (numero_documento) {
+            updates.push(`numero_documento = $${paramCount}`);
+            values.push(numero_documento);
+            paramCount++;
+        }
+
+        if (area) {
+            updates.push(`area = $${paramCount}`);
+            values.push(area);
+            paramCount++;
+        }
+
+        if (cargo) {
+            updates.push(`cargo = $${paramCount}`);
+            values.push(cargo);
+            paramCount++;
+        }
+
+        if (updates.length === 0) {
+            throw new Error('No se proporcionaron datos para actualizar.');
+        }
+
+        values.push(usuarioId);
+        const updateQuery = `
+            UPDATE usuarios 
+            SET ${updates.join(', ')}
+            WHERE usuario_id = $${paramCount}
+            RETURNING usuario_id, nombre, email, tipo_documento, numero_documento, area, cargo, is_active, requiere_evidencia_pago
+        `;
+
+        const result = await client.query(updateQuery, values);
+
+        await client.query('COMMIT');
+        return result.rows[0];
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
+};
+
+/**
+ * Desactivar un usuario (soft delete)
+ */
+const desactivarUsuario = async (usuarioId) => {
+    const client = await db.connect();
+    try {
+        const result = await client.query(
+            'UPDATE usuarios SET is_active = FALSE WHERE usuario_id = $1 RETURNING usuario_id, nombre, is_active',
+            [usuarioId]
+        );
+
+        if (result.rows.length === 0) {
+            throw new Error('Usuario no encontrado.');
+        }
+
+        return result.rows[0];
+    } finally {
+        client.release();
+    }
+};
+
+/**
+ * Activar un usuario
+ */
+const activarUsuario = async (usuarioId) => {
+    const client = await db.connect();
+    try {
+        const result = await client.query(
+            'UPDATE usuarios SET is_active = TRUE WHERE usuario_id = $1 RETURNING usuario_id, nombre, is_active',
+            [usuarioId]
+        );
+
+        if (result.rows.length === 0) {
+            throw new Error('Usuario no encontrado.');
+        }
+
+        return result.rows[0];
+    } finally {
+        client.release();
+    }
+};
+
+/**
+ * Asignar roles a un usuario (reemplaza los roles existentes)
+ */
+const asignarRoles = async (usuarioId, rolesIds) => {
+    const client = await db.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // Verificar que el usuario existe
+        const userCheck = await client.query('SELECT usuario_id FROM usuarios WHERE usuario_id = $1', [usuarioId]);
+        if (userCheck.rows.length === 0) {
+            throw new Error('Usuario no encontrado.');
+        }
+
+        // Eliminar roles existentes
+        await client.query('DELETE FROM usuario_roles WHERE usuario_id = $1', [usuarioId]);
+
+        // Insertar nuevos roles
+        if (rolesIds && rolesIds.length > 0) {
+            const insertPromises = rolesIds.map(rolId =>
+                client.query('INSERT INTO usuario_roles (usuario_id, rol_id) VALUES ($1, $2)', [usuarioId, rolId])
+            );
+            await Promise.all(insertPromises);
+        }
+
+        // Obtener roles actualizados
+        const rolesQuery = `
+            SELECT r.rol_id, r.nombre, r.codigo
+            FROM usuario_roles ur
+            JOIN roles r ON ur.rol_id = r.rol_id
+            WHERE ur.usuario_id = $1
+        `;
+        const rolesResult = await client.query(rolesQuery, [usuarioId]);
+
+        await client.query('COMMIT');
+        return rolesResult.rows;
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
+};
+
+/**
+ * Obtener todos los roles disponibles
+ */
+const listarRoles = async () => {
+    const client = await db.connect();
+    try {
+        const result = await client.query('SELECT rol_id, codigo, nombre FROM roles ORDER BY rol_id');
+        return result.rows;
+    } finally {
+        client.release();
+    }
+};
+
+module.exports = {
+    crearUsuario,
+    listarUsuarios,
+    obtenerUsuarioPorId,
+    actualizarUsuario,
+    desactivarUsuario,
+    activarUsuario,
+    asignarRoles,
+    listarRoles
+};
