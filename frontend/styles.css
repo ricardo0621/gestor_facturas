@@ -202,15 +202,20 @@ body {
     font-weight: 700;
     color: var(--color-text-primary);
     margin-bottom: var(--spacing-xs);
+    padding-left: 3px;
+    /* Separación del borde */
 }
 
 .card-subtitle {
     color: var(--color-text-tertiary);
     font-size: var(--font-size-sm);
+    padding-left: 3px;
+    /* Separación del borde */
 }
 
 .card-body {
-    padding: var(--spacing-xl);
+    padding: calc(var(--spacing-xl) + 3px);
+    /* Padding extra de 3px */
 }
 
 /* ============================================
@@ -279,6 +284,8 @@ body {
    ============================================ */
 .form-group {
     margin-bottom: var(--spacing-lg);
+    padding: 0 3px;
+    /* Separación de los bordes */
 }
 
 .form-label {
@@ -287,6 +294,8 @@ body {
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
     font-weight: 500;
+    padding-left: 3px;
+    /* Separación del borde */
 }
 
 .form-input,
@@ -912,4 +921,3 @@ body {
         grid-template-columns: 1fr;
     }
 }
-

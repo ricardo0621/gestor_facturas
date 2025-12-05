@@ -17,7 +17,8 @@ const {
     listarDocumentos,
     eliminarDocumento,
     descargarDocumento,
-    eliminarFactura
+    eliminarFactura,
+    busquedaAvanzada
 } = require('../controller/factura.controller');
 const { verifyToken } = require('../middlewares/auth.middleware');
 
@@ -69,6 +70,10 @@ const uploadMultiple = multer({
 
 // GET /api/facturas - Listar facturas con filtros
 router.get('/', verifyToken, listarFacturas);
+
+// GET /api/facturas/busqueda-avanzada - Búsqueda avanzada (requiere permiso)
+// IMPORTANTE: Esta ruta debe estar ANTES de /:id para evitar conflictos
+router.get('/busqueda-avanzada', verifyToken, busquedaAvanzada);
 
 // GET /api/facturas/estadisticas - Obtener estadísticas
 router.get('/estadisticas', verifyToken, obtenerEstadisticas);

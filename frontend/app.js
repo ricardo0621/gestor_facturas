@@ -222,6 +222,29 @@ async function showDashboard() {
             <div class="card-header">
                 <h2 class="card-title">Facturas Recientes</h2>
             </div>
+            
+            <!-- Formulario de Búsqueda -->
+            <div class="card-body" style="border-bottom: 1px solid var(--color-border);">
+                <form id="dashboardSearchForm" style="display: grid; grid-template-columns: repeat(3, 1fr) auto; gap: 1rem; align-items: end;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label">Número de Factura</label>
+                        <input type="text" id="searchNumeroFactura" class="form-input" placeholder="Ej: 12345">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label">NIT Proveedor</label>
+                        <input type="text" id="searchNit" class="form-input" placeholder="Ej: 900123456">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label">Nombre Proveedor</label>
+                        <input type="text" id="searchProveedor" class="form-input" placeholder="Ej: Proveedor XYZ">
+                    </div>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button type="submit" class="btn btn-primary">🔍 Buscar</button>
+                        <button type="button" id="btnLimpiarDashboard" class="btn btn-secondary">🔄 Limpiar</button>
+                    </div>
+                </form>
+            </div>
+            
             <div id="recentInvoices">
                 <div class="text-center" style="padding: 2rem;">
                     <div class="spinner" style="width: 40px; height: 40px; margin: 0 auto;"></div>
@@ -229,6 +252,13 @@ async function showDashboard() {
             </div>
         </div>
     `;
+
+    // Event listeners para búsqueda
+    document.getElementById('dashboardSearchForm').addEventListener('submit', handleDashboardSearch);
+    document.getElementById('btnLimpiarDashboard').addEventListener('click', () => {
+        document.getElementById('dashboardSearchForm').reset();
+        loadRecentInvoices();
+    });
 
     try {
         // Cargar estadísticas
@@ -255,9 +285,31 @@ async function showDashboard() {
     }
 }
 
-async function loadRecentInvoices() {
+async function handleDashboardSearch(e) {
+    e.preventDefault();
+
+    const filtros = {
+        numero_factura: document.getElementById('searchNumeroFactura').value,
+        nit: document.getElementById('searchNit').value,
+        proveedor: document.getElementById('searchProveedor').value
+    };
+
+    loadRecentInvoices(filtros);
+}
+
+async function loadRecentInvoices(filtros = {}) {
     try {
-        const response = await fetchAPI('/facturas');
+        // Construir query params
+        const params = new URLSearchParams();
+
+        if (filtros.numero_factura) params.append('numero_factura', filtros.numero_factura);
+        if (filtros.nit) params.append('nit', filtros.nit);
+        if (filtros.proveedor) params.append('proveedor', filtros.proveedor);
+
+        const queryString = params.toString();
+        const url = queryString ? `/facturas?${queryString}` : '/facturas';
+
+        const response = await fetchAPI(url);
 
         if (!response.ok) {
             const errorData = await response.json();
@@ -266,7 +318,12 @@ async function loadRecentInvoices() {
         }
 
         const data = await response.json();
-        const facturas = data.facturas.slice(0, 5);
+
+        // Si hay filtros, mostrar todas las coincidencias; si no, solo las 5 más recientes
+        const facturas = Object.keys(filtros).some(k => filtros[k])
+            ? data.facturas
+            : data.facturas.slice(0, 5);
+
         renderInvoiceTable(facturas, 'recentInvoices');
     } catch (error) {
         console.error('Error al cargar facturas recientes:', error);
@@ -1430,6 +1487,16 @@ function updateNavigation() {
             navProveedores.style.display = currentUser.roles && currentUser.roles.includes('SUPER_ADMIN') ? 'block' : 'none';
         }
 
+        // Mostrar enlace de Búsqueda Avanzada solo para SUPER_ADMIN y BUSQUEDA_FACTURAS
+        const navBusqueda = document.getElementById('navBusqueda');
+        if (navBusqueda) {
+            const tienePerm = currentUser.roles && (
+                currentUser.roles.includes('SUPER_ADMIN') ||
+                currentUser.roles.includes('BUSQUEDA_FACTURAS')
+            );
+            navBusqueda.style.display = tienePerm ? 'block' : 'none';
+        }
+
         // Ocultar "Cargar Factura" para RUTA_2, RUTA_3, RUTA_4
         const navCargar = document.querySelector('.nav-link[data-view="cargar"]');
         if (navCargar) {
@@ -1459,6 +1526,9 @@ function setupNavigation() {
                     break;
                 case 'cargar':
                     showCargarFactura();
+                    break;
+                case 'busqueda':
+                    showBusquedaAvanzada();
                     break;
                 case 'usuarios':
                     showUsuarios();
@@ -1876,6 +1946,192 @@ function showEditarProveedor(id, nit, nombre, direccion, telefono, email, isActi
             showToast('Error de conexión', 'error');
         }
     });
+}
+
+// ============================================
+// BÚSQUEDA AVANZADA
+// ============================================
+
+async function showBusquedaAvanzada() {
+    currentView = 'busqueda';
+    updateNavigation();
+
+    document.getElementById('mainContainer').innerHTML = `
+        <div class="card">
+            <div class="card-header">
+                <h1 class="card-title">🔍 Búsqueda Avanzada de Facturas</h1>
+            </div>
+            <form id="busquedaForm">
+                <div class="grid grid-cols-3">
+                    <div class="form-group">
+                        <label class="form-label">Fecha Desde</label>
+                        <input type="date" id="fechaDesde" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Fecha Hasta</label>
+                        <input type="date" id="fechaHasta" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Número de Factura</label>
+                        <input type="text" id="numeroFactura" class="form-input" placeholder="Ej: 12345">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">NIT Proveedor</label>
+                        <input type="text" id="nit" class="form-input" placeholder="Ej: 900123456">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Nombre Proveedor</label>
+                        <input type="text" id="proveedor" class="form-input" placeholder="Ej: Proveedor XYZ">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Usuario que Cargó</label>
+                        <input type="text" id="usuario" class="form-input" placeholder="Ej: Juan Pérez">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">
+                            <input type="checkbox" id="montoMayor2M" style="margin-right: 0.5rem;">
+                            Solo facturas mayores a $2,000,000
+                        </label>
+                    </div>
+                </div>
+                <div style="margin-top: 1.5rem; display: flex; gap: 1rem;">
+                    <button type="submit" class="btn btn-primary">🔍 Buscar</button>
+                    <button type="button" id="btnLimpiar" class="btn btn-secondary">🔄 Limpiar y Mostrar Todas</button>
+                </div>
+            </form>
+        </div>
+
+        <div id="resultadosBusqueda" style="margin-top: 2rem;"></div>
+    `;
+
+    document.getElementById('busquedaForm').addEventListener('submit', handleBusqueda);
+
+    // Event listener para el botón limpiar
+    document.getElementById('btnLimpiar').addEventListener('click', () => {
+        document.getElementById('busquedaForm').reset();
+        cargarTodasLasFacturas();
+    });
+
+    // Cargar todas las facturas al inicio
+    cargarTodasLasFacturas();
+}
+
+async function cargarTodasLasFacturas() {
+    try {
+        const response = await fetchAPI('/facturas/busqueda-avanzada');
+        const data = await response.json();
+
+        if (response.ok) {
+            mostrarResultadosBusqueda(data.facturas);
+        } else {
+            showToast(data.error || 'Error al cargar facturas', 'error');
+        }
+    } catch (error) {
+        console.error(error);
+        showToast('Error de conexión', 'error');
+    }
+}
+
+async function handleBusqueda(e) {
+    e.preventDefault();
+
+    const filtros = {
+        fecha_desde: document.getElementById('fechaDesde').value,
+        fecha_hasta: document.getElementById('fechaHasta').value,
+        numero_factura: document.getElementById('numeroFactura').value,
+        nit: document.getElementById('nit').value,
+        proveedor: document.getElementById('proveedor').value,
+        usuario: document.getElementById('usuario').value,
+        monto_mayor_2m: document.getElementById('montoMayor2M').checked
+    };
+
+    // Construir query string
+    const queryParams = new URLSearchParams();
+    Object.keys(filtros).forEach(key => {
+        if (filtros[key]) {
+            queryParams.append(key, filtros[key]);
+        }
+    });
+
+    try {
+        const response = await fetchAPI(`/facturas/busqueda-avanzada?${queryParams.toString()}`);
+        const data = await response.json();
+
+        if (response.ok) {
+            mostrarResultadosBusqueda(data.facturas);
+        } else {
+            showToast(data.error || 'Error al realizar búsqueda', 'error');
+        }
+    } catch (error) {
+        console.error(error);
+        showToast('Error de conexión', 'error');
+    }
+}
+
+function mostrarResultadosBusqueda(facturas) {
+    const container = document.getElementById('resultadosBusqueda');
+
+    if (facturas.length === 0) {
+        container.innerHTML = `
+            <div class="card">
+                <div style="text-align: center; padding: 2rem; color: var(--color-text-tertiary);">
+                    <p style="font-size: 1.125rem;">No se encontraron facturas con los criterios especificados</p>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    const facturasHTML = facturas.map(factura => {
+        // Formatear fecha de emisión (solo fecha)
+        const fechaEmision = factura.fecha_emision ? new Date(factura.fecha_emision).toLocaleDateString('es-CO') : 'N/A';
+
+        // Formatear fecha de creación (fecha y hora)
+        const fechaCreacion = factura.fecha_creacion ? formatDate(factura.fecha_creacion) : 'N/A';
+
+        return `
+        <div class="card" style="margin-bottom: 1rem;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                <div>
+                    <strong>Número:</strong> ${factura.numero_factura}<br>
+                    <strong>Proveedor:</strong> ${factura.proveedor_nombre}<br>
+                    <strong>NIT:</strong> ${factura.nit_proveedor}
+                </div>
+                <div>
+                    <strong>Monto:</strong> $${Number(factura.monto).toLocaleString('es-CO')}<br>
+                    <strong>Fecha Emisión:</strong> ${fechaEmision}<br>
+                    <strong>Fecha Carga:</strong> ${fechaCreacion}
+                </div>
+                <div>
+                    <strong>Estado:</strong> <span class="badge badge-${getEstadoBadgeClass(factura.estado_codigo)}">${factura.estado_nombre}</span><br>
+                    <strong>Cargada por:</strong> ${factura.usuario_creacion_nombre}<br>
+                    ${factura.is_anulada ? '<span class="badge badge-danger">ANULADA</span>' : ''}
+                </div>
+                <div style="display: flex; align-items: center; justify-content: flex-end;">
+                    <button class="btn btn-primary" onclick="viewInvoiceDetails('${factura.factura_id}')">Ver Detalles</button>
+                </div>
+            </div>
+        </div>
+    `;
+    }).join('');
+
+    container.innerHTML = `
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Resultados de Búsqueda (${facturas.length})</h2>
+            </div>
+            ${facturasHTML}
+        </div>
+    `;
+}
+
+function getEstadoBadgeClass(codigo) {
+    if (codigo === 'FINALIZADA') return 'success';
+    if (codigo === 'RUTA_1') return 'warning';
+    if (codigo.includes('RUTA_2')) return 'info';
+    if (codigo === 'RUTA_3') return 'secondary';
+    if (codigo === 'RUTA_4') return 'primary';
+    return 'secondary';
 }
 
 document.addEventListener('DOMContentLoaded', () => {

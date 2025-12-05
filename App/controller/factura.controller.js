@@ -103,7 +103,10 @@ const listarFacturas = async (req, res) => {
     try {
         const userId = req.user.usuario_id;
         const filtros = {
-            busqueda: req.query.busqueda || null
+            busqueda: req.query.busqueda || null,
+            numero_factura: req.query.numero_factura || null,
+            nit: req.query.nit || null,
+            proveedor: req.query.proveedor || null
         };
 
         const facturas = await facturaService.listarFacturas(filtros, userId);
@@ -503,6 +506,39 @@ const eliminarFactura = async (req, res) => {
     }
 };
 
+/**
+ * Búsqueda avanzada de facturas
+ */
+const busquedaAvanzada = async (req, res) => {
+    try {
+        const userId = req.user.usuario_id;
+        const filtros = req.query; // Recibir filtros desde query params
+
+        const resultados = await facturaService.busquedaAvanzada(filtros, userId);
+
+        res.status(200).json({
+            success: true,
+            count: resultados.length,
+            facturas: resultados
+        });
+
+    } catch (error) {
+        console.error('Error en búsqueda avanzada:', error);
+
+        if (error.message.includes('No tienes permisos')) {
+            return res.status(403).json({
+                error: 'Acceso denegado',
+                details: error.message
+            });
+        }
+
+        res.status(500).json({
+            error: 'Error al realizar búsqueda',
+            details: error.message
+        });
+    }
+};
+
 module.exports = {
     cargarFactura,
     listarFacturas,
@@ -515,6 +551,7 @@ module.exports = {
     listarDocumentos,
     eliminarDocumento,
     descargarDocumento,
-    eliminarFactura
+    eliminarFactura,
+    busquedaAvanzada
 };
 

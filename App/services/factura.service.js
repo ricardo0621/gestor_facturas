@@ -651,9 +651,29 @@ const listarFacturas = async (filtros, userId) => {
             }
         }
 
+        // Filtro de búsqueda general (legacy)
         if (filtros.busqueda) {
             query += ` AND (f.numero_factura ILIKE $${pCount} OR p.nombre ILIKE $${pCount})`;
             params.push(`%${filtros.busqueda}%`);
+            pCount++;
+        }
+
+        // Filtros específicos
+        if (filtros.numero_factura) {
+            query += ` AND f.numero_factura ILIKE $${pCount}`;
+            params.push(`%${filtros.numero_factura}%`);
+            pCount++;
+        }
+
+        if (filtros.nit) {
+            query += ` AND p.nit ILIKE $${pCount}`;
+            params.push(`%${filtros.nit}%`);
+            pCount++;
+        }
+
+        if (filtros.proveedor) {
+            query += ` AND p.nombre ILIKE $${pCount}`;
+            params.push(`%${filtros.proveedor}%`);
             pCount++;
         }
 
@@ -716,6 +736,113 @@ const obtenerEstadisticas = async () => {
     }
 };
 
+/**
+ * Búsqueda avanzada de facturas con múltiples filtros
+ */
+const busquedaAvanzada = async (filtros, userId) => {
+    const client = await db.connect();
+    try {
+        // Verificar que el usuario tenga permiso de búsqueda
+        const rolesRes = await client.query(`
+            SELECT r.codigo FROM usuario_roles ur
+            JOIN roles r ON ur.rol_id = r.rol_id
+            WHERE ur.usuario_id = $1
+        `, [userId]);
+
+        const roles = rolesRes.rows.map(r => r.codigo);
+
+        // Solo SUPER_ADMIN y BUSQUEDA_FACTURAS pueden usar búsqueda avanzada
+        if (!roles.includes('SUPER_ADMIN') && !roles.includes('BUSQUEDA_FACTURAS')) {
+            throw new Error('No tienes permisos para realizar búsquedas avanzadas');
+        }
+
+        let query = `
+            SELECT 
+                f.factura_id, f.numero_factura, f.fecha_emision, f.fecha_creacion,
+                f.monto, f.concepto, f.documento_nombre, f.is_anulada,
+                p.nombre AS proveedor_nombre, p.nit AS nit_proveedor,
+                e.nombre AS estado_nombre, e.codigo AS estado_codigo,
+                u.nombre AS usuario_creacion_nombre, u.email AS usuario_creacion_email
+            FROM facturas f
+            JOIN proveedores p ON f.proveedor_id = p.id
+            JOIN estados e ON f.estado_id = e.estado_id
+            JOIN usuarios u ON f.usuario_creacion_id = u.usuario_id
+            WHERE 1=1
+        `;
+
+        const params = [];
+        let pCount = 1;
+
+        // Filtro por fecha de cargue (rango)
+        if (filtros.fecha_desde) {
+            query += ` AND f.fecha_creacion >= $${pCount}`;
+            params.push(filtros.fecha_desde);
+            pCount++;
+        }
+
+        if (filtros.fecha_hasta) {
+            query += ` AND f.fecha_creacion <= $${pCount}`;
+            params.push(filtros.fecha_hasta + ' 23:59:59'); // Incluir todo el día
+            pCount++;
+        }
+
+        // Filtro por NIT del proveedor
+        if (filtros.nit) {
+            query += ` AND p.nit ILIKE $${pCount}`;
+            params.push(`%${filtros.nit}%`);
+            pCount++;
+        }
+
+        // Filtro por nombre del proveedor
+        if (filtros.proveedor) {
+            query += ` AND p.nombre ILIKE $${pCount}`;
+            params.push(`%${filtros.proveedor}%`);
+            pCount++;
+        }
+
+        // Filtro por usuario que cargó
+        if (filtros.usuario) {
+            query += ` AND u.nombre ILIKE $${pCount}`;
+            params.push(`%${filtros.usuario}%`);
+            pCount++;
+        }
+
+        // Filtro por número de factura
+        if (filtros.numero_factura) {
+            query += ` AND f.numero_factura ILIKE $${pCount}`;
+            params.push(`%${filtros.numero_factura}%`);
+            pCount++;
+        }
+
+        // Filtro por monto mayor a 2 millones
+        if (filtros.monto_mayor_2m === 'true' || filtros.monto_mayor_2m === true) {
+            query += ` AND f.monto > 2000000`;
+        }
+
+        // Filtro por estado
+        if (filtros.estado) {
+            query += ` AND e.codigo = $${pCount}`;
+            params.push(filtros.estado);
+            pCount++;
+        }
+
+        // Ordenar por fecha de creación descendente
+        query += ` ORDER BY f.fecha_creacion DESC`;
+
+        // Limitar resultados (opcional)
+        if (filtros.limite) {
+            query += ` LIMIT $${pCount}`;
+            params.push(parseInt(filtros.limite));
+            pCount++;
+        }
+
+        const res = await client.query(query, params);
+        return res.rows;
+    } finally {
+        client.release();
+    }
+};
+
 module.exports = {
     crearFactura,
     crearFacturaConMultiplesArchivos,
@@ -728,5 +855,6 @@ module.exports = {
     listarDocumentos,
     eliminarDocumento,
     eliminarFactura,
-    validarEvidenciaPago
+    validarEvidenciaPago,
+    busquedaAvanzada
 };
