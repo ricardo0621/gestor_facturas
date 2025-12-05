@@ -171,6 +171,9 @@ async function handleLogin(e) {
             currentUser = data.usuario;
             showToast('Inicio de sesión exitoso', 'success');
             showDashboard();
+
+            // Iniciar sistema de notificaciones
+            iniciarPolling();
         } else {
             showToast(data.error || 'Error al iniciar sesión', 'error');
         }
@@ -180,6 +183,9 @@ async function handleLogin(e) {
 }
 
 function handleLogout() {
+    // Detener sistema de notificaciones
+    detenerPolling();
+
     removeToken();
     currentUser = null;
     showToast('Sesión cerrada exitosamente', 'info');
@@ -2134,6 +2140,148 @@ function getEstadoBadgeClass(codigo) {
     return 'secondary';
 }
 
+// ============================================
+// SISTEMA DE NOTIFICACIONES
+// ============================================
+
+let pollingInterval = null;
+let ultimoContador = 0;
+
+/**
+ * Reproducir sonido de notificación usando Web Audio API
+ */
+function reproducirSonidoNotificacion() {
+    try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        // Crear oscilador para el tono
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        // Configurar el sonido (tono agradable)
+        oscillator.frequency.value = 800; // Frecuencia en Hz
+        oscillator.type = 'sine'; // Tipo de onda
+
+        // Configurar volumen con fade out
+        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+
+        // Reproducir
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.5);
+
+        // Segundo tono para hacer más agradable
+        setTimeout(() => {
+            const osc2 = audioContext.createOscillator();
+            const gain2 = audioContext.createGain();
+
+            osc2.connect(gain2);
+            gain2.connect(audioContext.destination);
+
+            osc2.frequency.value = 1000;
+            osc2.type = 'sine';
+
+            gain2.gain.setValueAtTime(0.2, audioContext.currentTime);
+            gain2.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+
+            osc2.start(audioContext.currentTime);
+            osc2.stop(audioContext.currentTime + 0.3);
+        }, 100);
+
+    } catch (error) {
+        console.log('No se pudo reproducir el sonido:', error);
+    }
+}
+
+/**
+ * Actualizar contador de facturas pendientes
+ */
+async function actualizarContadorPendientes() {
+    try {
+        const response = await fetchAPI('/facturas/pendientes/count');
+        const data = await response.json();
+
+        if (response.ok) {
+            const pendientes = data.pendientes || 0;
+
+            // Si hay nuevas facturas pendientes (el contador aumentó)
+            if (pendientes > ultimoContador && ultimoContador > 0) {
+                const nuevas = pendientes - ultimoContador;
+                reproducirSonidoNotificacion();
+                showToast(`¡${nuevas} nueva(s) factura(s) pendiente(s) de aprobar!`, 'info');
+            }
+
+            ultimoContador = pendientes;
+
+            if (pendientes > 0) {
+                mostrarBadgePendientes(pendientes);
+            } else {
+                ocultarBadgePendientes();
+            }
+        }
+    } catch (error) {
+        console.error('Error al actualizar contador:', error);
+    }
+}
+
+/**
+ * Mostrar badge de notificaciones en el menú
+ */
+function mostrarBadgePendientes(cantidad) {
+    const navFacturas = document.querySelector('.nav-link[data-view="dashboard"]');
+    if (navFacturas) {
+        let badge = navFacturas.querySelector('.badge-notif');
+        if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'badge-notif';
+            navFacturas.appendChild(badge);
+        }
+        badge.textContent = cantidad;
+        badge.style.display = 'inline-block';
+    }
+}
+
+/**
+ * Ocultar badge de notificaciones
+ */
+function ocultarBadgePendientes() {
+    const badge = document.querySelector('.badge-notif');
+    if (badge) {
+        badge.style.display = 'none';
+    }
+}
+
+/**
+ * Iniciar polling de notificaciones
+ */
+function iniciarPolling() {
+    // Actualizar inmediatamente
+    actualizarContadorPendientes();
+
+    // Actualizar cada 30 segundos
+    if (pollingInterval) {
+        clearInterval(pollingInterval);
+    }
+
+    pollingInterval = setInterval(() => {
+        actualizarContadorPendientes();
+    }, 30000); // 30 segundos
+}
+
+/**
+ * Detener polling de notificaciones
+ */
+function detenerPolling() {
+    if (pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+    }
+    ultimoContador = 0;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     setupNavigation();
     const token = getToken();
@@ -2146,6 +2294,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 roles: payload.roles
             };
             showDashboard();
+
+            // Iniciar sistema de notificaciones
+            iniciarPolling();
         } catch (error) {
             removeToken();
             showLogin();

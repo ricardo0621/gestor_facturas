@@ -843,6 +843,92 @@ const busquedaAvanzada = async (filtros, userId) => {
     }
 };
 
+/**
+ * Contar facturas pendientes de aprobación para el usuario
+ */
+const contarFacturasPendientes = async (userId) => {
+    const client = await db.connect();
+    try {
+        // Obtener roles del usuario
+        const rolesRes = await client.query(`
+            SELECT r.codigo FROM usuario_roles ur
+            JOIN roles r ON ur.rol_id = r.rol_id
+            WHERE ur.usuario_id = $1
+        `, [userId]);
+
+        const roles = rolesRes.rows.map(r => r.codigo);
+
+        // Si es SUPER_ADMIN, no mostrar notificaciones (ve todo)
+        if (roles.includes('SUPER_ADMIN')) {
+            return 0;
+        }
+
+        let query = `
+            SELECT COUNT(*) as total
+            FROM facturas f
+            JOIN estados e ON f.estado_id = e.estado_id
+            WHERE f.is_anulada = FALSE
+        `;
+
+        const params = [];
+        let pCount = 1;
+
+        const conditions = [];
+
+        // Roles de Ruta 2 especializados
+        const rolesRuta2 = [
+            'RUTA_2',
+            'RUTA_2_CONTROL_INTERNO',
+            'RUTA_2_DIRECCION_MEDICA',
+            'RUTA_2_DIRECCION_FINANCIERA',
+            'RUTA_2_DIRECCION_ADMINISTRATIVA',
+            'RUTA_2_DIRECCION_GENERAL'
+        ];
+
+        const rolesRuta2Usuario = roles.filter(rol => rolesRuta2.includes(rol));
+
+        if (rolesRuta2Usuario.length > 0) {
+            const rolesPlaceholders = rolesRuta2Usuario.map((rol, index) => {
+                params.push(rol);
+                return `$${pCount + index}`;
+            }).join(', ');
+
+            conditions.push(`(
+                e.codigo IN (
+                    'RUTA_2',
+                    'RUTA_2_CONTROL_INTERNO',
+                    'RUTA_2_DIRECCION_MEDICA',
+                    'RUTA_2_DIRECCION_FINANCIERA',
+                    'RUTA_2_DIRECCION_ADMINISTRATIVA',
+                    'RUTA_2_DIRECCION_GENERAL'
+                )
+                AND (f.rol_aprobador_ruta2 IN (${rolesPlaceholders}) OR f.rol_aprobador_ruta2 IS NULL)
+            )`);
+            pCount += rolesRuta2Usuario.length;
+        }
+
+        if (roles.includes('RUTA_3')) {
+            conditions.push(`e.codigo = 'RUTA_3'`);
+        }
+
+        if (roles.includes('RUTA_4')) {
+            conditions.push(`e.codigo = 'RUTA_4'`);
+        }
+
+        if (conditions.length > 0) {
+            query += ` AND (${conditions.join(' OR ')})`;
+        } else {
+            // Si no tiene roles de aprobación, retornar 0
+            return 0;
+        }
+
+        const res = await client.query(query, params);
+        return parseInt(res.rows[0].total) || 0;
+    } finally {
+        client.release();
+    }
+};
+
 module.exports = {
     crearFactura,
     crearFacturaConMultiplesArchivos,
@@ -856,5 +942,6 @@ module.exports = {
     eliminarDocumento,
     eliminarFactura,
     validarEvidenciaPago,
-    busquedaAvanzada
+    busquedaAvanzada,
+    contarFacturasPendientes
 };

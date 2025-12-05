@@ -18,7 +18,8 @@ const {
     eliminarDocumento,
     descargarDocumento,
     eliminarFactura,
-    busquedaAvanzada
+    busquedaAvanzada,
+    contarPendientes
 } = require('../controller/factura.controller');
 const { verifyToken } = require('../middlewares/auth.middleware');
 
@@ -74,6 +75,9 @@ router.get('/', verifyToken, listarFacturas);
 // GET /api/facturas/busqueda-avanzada - Búsqueda avanzada (requiere permiso)
 // IMPORTANTE: Esta ruta debe estar ANTES de /:id para evitar conflictos
 router.get('/busqueda-avanzada', verifyToken, busquedaAvanzada);
+
+// GET /api/facturas/pendientes/count - Contar facturas pendientes
+router.get('/pendientes/count', verifyToken, contarPendientes);
 
 // GET /api/facturas/estadisticas - Obtener estadísticas
 router.get('/estadisticas', verifyToken, obtenerEstadisticas);

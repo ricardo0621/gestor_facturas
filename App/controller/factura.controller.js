@@ -539,6 +539,28 @@ const busquedaAvanzada = async (req, res) => {
     }
 };
 
+/**
+ * Contar facturas pendientes de aprobación
+ */
+const contarPendientes = async (req, res) => {
+    try {
+        const userId = req.user.usuario_id;
+        const total = await facturaService.contarFacturasPendientes(userId);
+
+        res.status(200).json({
+            success: true,
+            pendientes: total
+        });
+
+    } catch (error) {
+        console.error('Error al contar pendientes:', error);
+        res.status(500).json({
+            error: 'Error al contar pendientes',
+            details: error.message
+        });
+    }
+};
+
 module.exports = {
     cargarFactura,
     listarFacturas,
@@ -552,6 +574,7 @@ module.exports = {
     eliminarDocumento,
     descargarDocumento,
     eliminarFactura,
-    busquedaAvanzada
+    busquedaAvanzada,
+    contarPendientes
 };
 

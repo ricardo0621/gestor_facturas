@@ -1,0 +1,37 @@
+/* Badge de notificaciones */
+.nav-link {
+    position: relative !important;
+    /* Para posicionar el badge */
+}
+
+.badge-notif {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    background: var(--color-error);
+    color: white;
+    border-radius: 50%;
+    width: 22px;
+    height: 22px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 700;
+    animation: pulse-badge 2s infinite;
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.4);
+}
+
+@keyframes pulse-badge {
+
+    0%,
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+    }
+
+    50% {
+        transform: scale(1.1);
+        box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+    }
+}
