@@ -81,6 +81,15 @@ body {
     color: var(--color-text-primary);
     line-height: 1.6;
     min-height: 100vh;
+
+    /* Imagen de fondo */
+    background-image:
+        linear-gradient(rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.88)),
+        url('clinica-bg.jpg');
+    background-size: 100% auto;
+    background-position: bottom left;
+    background-attachment: fixed;
+    background-repeat: no-repeat;
 }
 
 /* ============================================
@@ -115,9 +124,9 @@ body {
 }
 
 .logo-icon {
-    width: 32px;
-    height: 32px;
-    color: var(--color-primary);
+    width: 120px;
+    height: auto;
+    object-fit: contain;
 }
 
 .nav-menu {
