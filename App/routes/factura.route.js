@@ -19,7 +19,10 @@ const {
     descargarDocumento,
     eliminarFactura,
     busquedaAvanzada,
-    contarPendientes
+    contarPendientes,
+    corregirFacturaRuta1,
+    eliminarDocumentoCorreccion,
+    agregarDocumentoCorreccion
 } = require('../controller/factura.controller');
 const { verifyToken } = require('../middlewares/auth.middleware');
 
@@ -41,9 +44,22 @@ const storage = multer.diskStorage({
         cb(null, UPLOAD_BASE_PATH);
     },
     filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        const fileExtension = path.extname(file.originalname);
-        cb(null, file.fieldname + '-' + uniqueSuffix + fileExtension);
+        // Obtener información del request
+        const facturaId = req.params.id || req.body.factura_id || 'TEMP';
+        const tipoDoc = req.body.tipo_documento || file.fieldname || 'DOC';
+        const timestamp = Date.now();
+
+        // Limpiar nombre original (sin espacios ni caracteres especiales)
+        const ext = path.extname(file.originalname);
+        const nombreBase = path.basename(file.originalname, ext)
+            .replace(/\s+/g, '_')           // Espacios a guiones bajos
+            .replace(/[^a-zA-Z0-9_-]/g, '') // Solo alfanuméricos, guiones y guiones bajos
+            .substring(0, 50);              // Máximo 50 caracteres
+
+        // Formato mejorado: FAC-123_FACTURA_1733876543210_nombre_original.pdf
+        const fileName = `FAC-${facturaId}_${tipoDoc}_${timestamp}_${nombreBase}${ext}`;
+
+        cb(null, fileName);
     }
 });
 
@@ -97,6 +113,9 @@ router.put('/:id/estado', verifyToken, procesarEstado);
 // PUT /api/facturas/:id/estado-con-documento - Procesar flujo con documento de soporte (Ruta 3)
 router.put('/:id/estado-con-documento', verifyToken, uploadSingleSoporte, procesarEstadoConDocumento);
 
+// PUT /api/facturas/:id/corregir-datos - Corregir datos de factura (Solo Ruta 1)
+router.put('/:id/corregir-datos', verifyToken, corregirFacturaRuta1);
+
 // DELETE /api/facturas/:id - Eliminar factura (solo SUPER_ADMIN)
 router.delete('/:id', verifyToken, eliminarFactura);
 
@@ -107,8 +126,14 @@ router.delete('/:id', verifyToken, eliminarFactura);
 // POST /api/facturas/:id/documentos - Agregar documento a una factura (evidencia de pago)
 router.post('/:id/documentos', verifyToken, uploadSingleDocumento, agregarDocumento);
 
+// POST /api/facturas/:id/documentos/correccion - Agregar documento de corrección (Ruta 1 o 3)
+router.post('/:id/documentos/correccion', verifyToken, uploadSingleDocumento, agregarDocumentoCorreccion);
+
 // GET /api/facturas/:id/documentos - Listar documentos de una factura
 router.get('/:id/documentos', verifyToken, listarDocumentos);
+
+// DELETE /api/facturas/:facturaId/documentos/:documentoId/correccion - Eliminar documento durante corrección (Ruta 1)
+router.delete('/:facturaId/documentos/:documentoId/correccion', verifyToken, eliminarDocumentoCorreccion);
 
 // DELETE /api/facturas/documentos/:docId - Eliminar un documento
 router.delete('/documentos/:docId', verifyToken, eliminarDocumento);

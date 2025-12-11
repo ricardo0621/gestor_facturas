@@ -1,0 +1,86 @@
+/**
+ * Gestor de Facturas - Aplicación Principal
+ * Punto de entrada modular
+ */
+
+// Importar configuración
+import { CONFIG } from './js/config/config.js';
+
+// Importar utilidades
+import { getToken, setToken, removeToken, getCurrentUser } from './js/utils/auth.js';
+import { formatDate, formatCurrency, getEstadoBadgeClass } from './js/utils/formatters.js';
+
+// Importar servicios
+import { fetchAPI } from './js/services/api.service.js';
+
+// Importar componentes
+import { showModal, hideModal } from './js/components/modal.js';
+import { showToast } from './js/components/toast.js';
+
+// Importar vistas
+import { showLogin } from './js/views/login.js';
+import { showDashboard } from './js/views/dashboard.js';
+import { showUsuarios } from './js/views/usuarios.js';
+import { showProveedores } from './js/views/proveedores.js';
+import { showTiposSoporte } from './js/views/tiposSoporte.js';
+import { showBusquedaAvanzada } from './js/views/busqueda.js';
+
+// Estado global
+let currentUser = null;
+let currentView = 'login';
+
+// Exportar para uso global (temporal durante migración)
+window.getToken = getToken;
+window.setToken = setToken;
+window.removeToken = removeToken;
+window.fetchAPI = fetchAPI;
+window.showModal = showModal;
+window.hideModal = hideModal;
+window.showToast = showToast;
+window.formatDate = formatDate;
+window.formatCurrency = formatCurrency;
+window.getEstadoBadgeClass = getEstadoBadgeClass;
+
+// Exportar vistas
+window.showLogin = showLogin;
+window.showDashboard = showDashboard;
+window.showUsuarios = showUsuarios;
+window.showProveedores = showProveedores;
+window.showTiposSoporte = showTiposSoporte;
+window.showBusquedaAvanzada = showBusquedaAvanzada;
+
+// Inicialización
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('✅ Gestor de Facturas - Módulos cargados');
+
+    // Cargar el resto del código desde app.js.old temporalmente
+    // TODO: Migrar completamente a módulos
+    const script = document.createElement('script');
+    script.src = 'app.js.old';
+
+    // Ejecutar la lógica de inicialización después de cargar el script
+    script.onload = () => {
+        // La lógica de inicialización de app.js.old
+        const token = getToken();
+        if (token) {
+            try {
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                window.currentUser = {
+                    nombre: payload.nombre,
+                    usuario_id: payload.usuario_id,
+                    roles: payload.roles
+                };
+                showDashboard();
+                iniciarPolling();
+            } catch (error) {
+                removeToken();
+                showLogin();
+            }
+        } else {
+            showLogin();
+        }
+        setupNavigation();
+    };
+
+    document.body.appendChild(script);
+});

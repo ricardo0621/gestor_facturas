@@ -1,7 +1,8 @@
 const db = require('../config/db');
 const path = require('path');
 const fs = require('fs');
-const { ESTADOS, ACCIONES, calcularTransicion } = require('../utils/workflow');
+const { ESTADOS, ACCIONES } = require('../constants');
+const { calcularTransicion } = require('../utils/workflow');
 
 /**
  * Helper para obtener ID de estado por código
@@ -224,7 +225,7 @@ const crearFacturaConMultiplesArchivos = async (facturaData, files, tiposDocumen
  * Gestiona el flujo de la factura (Aprobar, Rechazar, Corregir, Anular, Pagar)
  */
 const procesarFactura = async (facturaId, accion, userId, datosAdicionales = {}) => {
-    const { observacion, estadoDestinoRechazoCodigo } = datosAdicionales;
+    const { observacion } = datosAdicionales;
     const client = await db.connect();
 
     try {
@@ -249,7 +250,7 @@ const procesarFactura = async (facturaId, accion, userId, datosAdicionales = {})
             }
         }
 
-        // 2. Calcular Transición
+        // 2. Calcular Transición (sin estadoDestinoRechazo, ahora es automático)
         let estadoRetornoCorreccionCodigo = null;
         if (accion === ACCIONES.CORREGIR && factura.estado_retorno_id) {
             estadoRetornoCorreccionCodigo = await getEstadoCodigoById(client, factura.estado_retorno_id);
@@ -258,7 +259,6 @@ const procesarFactura = async (facturaId, accion, userId, datosAdicionales = {})
         const transicion = calcularTransicion(
             factura.estado_codigo,
             accion,
-            estadoDestinoRechazoCodigo,
             estadoRetornoCorreccionCodigo
         );
 
@@ -640,7 +640,7 @@ const listarFacturas = async (filtros, userId) => {
                 conditions.push(`e.codigo = 'RUTA_3'`);
             }
 
-            // Si tiene rol de Ruta 4
+            // Si tiene rol de Ruta 4 - EXCLUIR facturas FINALIZADAS de la lista reciente
             if (roles.includes('RUTA_4')) {
                 conditions.push(`e.codigo = 'RUTA_4'`);
             }
@@ -649,6 +649,19 @@ const listarFacturas = async (filtros, userId) => {
             if (conditions.length > 0) {
                 query += ` AND (${conditions.join(' OR ')})`;
             }
+        }
+
+        // IMPORTANTE: Excluir facturas FINALIZADAS para usuarios de Ruta 4 (solo en lista reciente)
+        // Las facturas finalizadas solo se verán en búsqueda avanzada
+        if (roles.includes('RUTA_4') && !roles.includes('SUPER_ADMIN')) {
+            query += ` AND e.codigo != 'FINALIZADA'`;
+        }
+
+        // Filtro de estado (para Route 1 principalmente)
+        if (filtros.estado_codigo) {
+            query += ` AND e.codigo = $${pCount}`;
+            params.push(filtros.estado_codigo);
+            pCount++;
         }
 
         // Filtro de búsqueda general (legacy)
@@ -674,6 +687,13 @@ const listarFacturas = async (filtros, userId) => {
         if (filtros.proveedor) {
             query += ` AND p.nombre ILIKE $${pCount}`;
             params.push(`%${filtros.proveedor}%`);
+            pCount++;
+        }
+
+        // Filtro por estado (para usuarios Ruta 1)
+        if (filtros.estado_codigo) {
+            query += ` AND e.codigo = $${pCount}`;
+            params.push(filtros.estado_codigo);
             pCount++;
         }
 
@@ -929,6 +949,282 @@ const contarFacturasPendientes = async (userId) => {
     }
 };
 
+/**
+ * Corregir datos de factura (Solo Ruta 1)
+ * Permite editar número, proveedor, fecha, monto y concepto
+ */
+const corregirFacturaRuta1 = async (facturaId, datosActualizados, userId) => {
+    const { numero_factura, nit_proveedor, fecha_emision, monto, concepto } = datosActualizados;
+    const client = await db.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // 1. Verificar que la factura existe y obtener estado
+        const facturaRes = await client.query(`
+            SELECT f.*, e.codigo as estado_codigo
+            FROM facturas f
+            JOIN estados e ON f.estado_id = e.estado_id
+            WHERE f.factura_id = $1
+        `, [facturaId]);
+
+        if (facturaRes.rows.length === 0) {
+            throw new Error('Factura no encontrada.');
+        }
+
+        const factura = facturaRes.rows[0];
+
+        // 2. Validar que está en RUTA_1
+        if (factura.estado_codigo !== 'RUTA_1') {
+            throw new Error('Solo se pueden editar facturas que estén en Ruta 1.');
+        }
+
+        // 3. Validar que el usuario es el creador
+        if (factura.usuario_creacion_id !== userId) {
+            throw new Error('Solo el usuario que creó la factura puede editarla.');
+        }
+
+        // 4. Validar que fue rechazada (tiene estado_retorno_id)
+        if (!factura.estado_retorno_id) {
+            throw new Error('Solo se pueden editar facturas que fueron devueltas para corrección.');
+        }
+
+        // 5. Validar proveedor si se cambió
+        let proveedorId = factura.proveedor_id;
+        if (nit_proveedor && nit_proveedor !== factura.nit_proveedor) {
+            const proveedorRes = await client.query(
+                'SELECT id FROM proveedores WHERE nit = $1',
+                [nit_proveedor]
+            );
+            if (proveedorRes.rows.length === 0) {
+                throw new Error(`El proveedor con NIT ${nit_proveedor} no existe.`);
+            }
+            proveedorId = proveedorRes.rows[0].id;
+        }
+
+        // 6. Actualizar factura
+        const updateQuery = `
+            UPDATE facturas
+            SET numero_factura = $1,
+                proveedor_id = $2,
+                fecha_emision = $3,
+                monto = $4,
+                concepto = $5,
+                fecha_actualizacion = CURRENT_TIMESTAMP
+            WHERE factura_id = $6
+            RETURNING factura_id, numero_factura, fecha_emision, monto, concepto
+        `;
+
+        const result = await client.query(updateQuery, [
+            numero_factura || factura.numero_factura,
+            proveedorId,
+            fecha_emision || factura.fecha_emision,
+            monto || factura.monto,
+            concepto !== undefined ? concepto : factura.concepto,
+            facturaId
+        ]);
+
+        // 7. Registrar en historial
+        await client.query(`
+            INSERT INTO factura_historial (
+                factura_id, estado_anterior_id, estado_nuevo_id,
+                usuario_id, accion, observacion
+            )
+            VALUES ($1, $2, $2, $3, $4, $5)
+        `, [
+            facturaId,
+            factura.estado_id,
+            userId,
+            'EDITAR',
+            'Datos de factura actualizados durante corrección'
+        ]);
+
+        await client.query('COMMIT');
+        return result.rows[0];
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
+};
+
+/**
+ * Eliminar documento durante corrección (Solo Ruta 1)
+ */
+const eliminarDocumentoRuta1 = async (documentoId, facturaId, userId) => {
+    const client = await db.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // 1. Verificar que la factura está en RUTA_1 y fue rechazada
+        const facturaRes = await client.query(`
+            SELECT f.*, e.codigo as estado_codigo
+            FROM facturas f
+            JOIN estados e ON f.estado_id = e.estado_id
+            WHERE f.factura_id = $1
+        `, [facturaId]);
+
+        if (facturaRes.rows.length === 0) {
+            throw new Error('Factura no encontrada.');
+        }
+
+        const factura = facturaRes.rows[0];
+
+        if (factura.estado_codigo !== 'RUTA_1') {
+            throw new Error('Solo se pueden eliminar documentos de facturas en Ruta 1.');
+        }
+
+        if (factura.usuario_creacion_id !== userId) {
+            throw new Error('Solo el creador de la factura puede eliminar documentos.');
+        }
+
+        if (!factura.estado_retorno_id) {
+            throw new Error('Solo se pueden eliminar documentos de facturas devueltas para corrección.');
+        }
+
+        // 2. Obtener documento
+        const docRes = await client.query(
+            'SELECT * FROM factura_documentos WHERE documento_id = $1 AND factura_id = $2',
+            [documentoId, facturaId]
+        );
+
+        if (docRes.rows.length === 0) {
+            throw new Error('Documento no encontrado.');
+        }
+
+        const doc = docRes.rows[0];
+
+        // 3. PERMITIR eliminar cualquier tipo de documento durante corrección en RUTA_1
+        // (Comentado: restricción removida según requerimiento del usuario)
+        // if (doc.tipo_documento === 'SOPORTE_INICIAL' || doc.tipo_documento === 'FACTURA') {
+        //     throw new Error('No se pueden eliminar documentos de soporte inicial o facturas.');
+        // }
+
+        // 4. Eliminar registro
+        await client.query('DELETE FROM factura_documentos WHERE documento_id = $1', [documentoId]);
+
+        // 5. Eliminar archivo físico
+        if (fs.existsSync(doc.ruta_archivo)) {
+            fs.unlinkSync(doc.ruta_archivo);
+        }
+
+        await client.query('COMMIT');
+        return { mensaje: 'Documento eliminado exitosamente' };
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
+};
+
+/**
+ * Agregar documento de corrección (Ruta 1, 2 o 3)
+ * Ruta 1: Puede agregar durante corrección avanzada
+ * Ruta 3: Puede agregar durante corrección simple
+ * Ruta 2: NO puede agregar documentos (solo observación)
+ */
+const agregarDocumentoCorreccion = async (facturaId, archivo, nombrePersonalizado, userId, observacion = null) => {
+    const client = await db.connect();
+    const UPLOAD_DIR = 'D:\\FacturasClinica';
+    const filePath = path.join(UPLOAD_DIR, archivo.filename);
+
+    try {
+        await client.query('BEGIN');
+
+        // 1. Verificar factura y estado
+        const facturaRes = await client.query(`
+            SELECT f.*, e.codigo as estado_codigo
+            FROM facturas f
+            JOIN estados e ON f.estado_id = e.estado_id
+            WHERE f.factura_id = $1
+        `, [facturaId]);
+
+        if (facturaRes.rows.length === 0) {
+            throw new Error('Factura no encontrada.');
+        }
+
+        const factura = facturaRes.rows[0];
+
+        // 2. Obtener roles del usuario
+        const rolesRes = await client.query(`
+            SELECT r.codigo FROM usuario_roles ur
+            JOIN roles r ON ur.rol_id = r.rol_id
+            WHERE ur.usuario_id = $1
+        `, [userId]);
+
+        const roles = rolesRes.rows.map(r => r.codigo);
+
+        // 3. Validar permisos según estado y rol
+        const estadosRuta2 = [
+            'RUTA_2',
+            'RUTA_2_CONTROL_INTERNO',
+            'RUTA_2_DIRECCION_MEDICA',
+            'RUTA_2_DIRECCION_FINANCIERA',
+            'RUTA_2_DIRECCION_ADMINISTRATIVA',
+            'RUTA_2_DIRECCION_GENERAL'
+        ];
+
+        if (factura.estado_codigo === 'RUTA_1') {
+            // Solo el creador puede agregar en Ruta 1
+            if (factura.usuario_creacion_id !== userId) {
+                throw new Error('Solo el creador puede agregar documentos en Ruta 1.');
+            }
+            if (!factura.estado_retorno_id) {
+                throw new Error('Solo se pueden agregar documentos a facturas devueltas para corrección.');
+            }
+        } else if (estadosRuta2.includes(factura.estado_codigo)) {
+            // Ruta 2 NO puede agregar documentos
+            throw new Error('Ruta 2 no puede agregar documentos de corrección. Solo puede aprobar o rechazar con observación.');
+        } else if (factura.estado_codigo === 'RUTA_3') {
+            // Verificar que el usuario tiene rol RUTA_3
+            if (!roles.includes('RUTA_3')) {
+                throw new Error('Solo usuarios de Ruta 3 pueden agregar documentos en este estado.');
+            }
+            if (!factura.estado_retorno_id) {
+                throw new Error('Solo se pueden agregar documentos a facturas devueltas para corrección.');
+            }
+        } else {
+            throw new Error('No se pueden agregar documentos de corrección en este estado.');
+        }
+
+        // 4. Insertar documento
+        const insertQuery = `
+            INSERT INTO factura_documentos (
+                factura_id, tipo_documento, nombre_archivo, nombre_personalizado,
+                ruta_archivo, usuario_carga_id, observacion
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING documento_id, nombre_archivo, nombre_personalizado, fecha_carga
+        `;
+
+        const result = await client.query(insertQuery, [
+            facturaId,
+            'DOCUMENTO_CORRECCION',
+            archivo.filename,
+            nombrePersonalizado || archivo.originalname,
+            filePath,
+            userId,
+            observacion || 'Documento agregado durante corrección'
+        ]);
+
+        await client.query('COMMIT');
+        return result.rows[0];
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        if (archivo && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        throw error;
+    } finally {
+        client.release();
+    }
+};
+
+
 module.exports = {
     crearFactura,
     crearFacturaConMultiplesArchivos,
@@ -943,5 +1239,9 @@ module.exports = {
     eliminarFactura,
     validarEvidenciaPago,
     busquedaAvanzada,
-    contarFacturasPendientes
+    contarFacturasPendientes,
+    corregirFacturaRuta1,
+    eliminarDocumentoRuta1,
+    agregarDocumentoCorreccion
 };
+

@@ -183,13 +183,56 @@ async function handleLogin(e) {
 }
 
 function handleLogout() {
-    // Detener sistema de notificaciones
-    detenerPolling();
+    console.log('🔴 handleLogout called');
 
-    removeToken();
-    currentUser = null;
-    showToast('Sesión cerrada exitosamente', 'info');
-    showLogin();
+    try {
+        // Detener sistema de notificaciones
+        // detenerPolling(); // TODO: Implementar sistema de notificaciones
+
+        console.log('🔴 Removing token...');
+        removeToken();
+
+        console.log('🔴 Clearing currentUser...');
+        currentUser = null;
+
+        console.log('🔴 Showing toast...');
+        showToast('Sesión cerrada exitosamente', 'info');
+
+        console.log('🔴 Showing login...');
+        showLogin();
+
+        console.log('✅ Logout completed successfully');
+    } catch (error) {
+        console.error('❌ Error in handleLogout:', error);
+        // Intentar mostrar login de todas formas
+        try {
+            showLogin();
+        } catch (e) {
+            console.error('❌ Error showing login:', e);
+        }
+    }
+}
+
+/**
+ * Actualizar visibilidad de navegación según roles
+ */
+function updateNavigation() {
+    if (!currentUser) return;
+
+    const navBusqueda = document.getElementById('navBusqueda');
+    const navUsuarios = document.getElementById('navUsuarios');
+    const navProveedores = document.getElementById('navProveedores');
+    const navTiposSoporte = document.getElementById('navTiposSoporte');
+
+    // Búsqueda Avanzada: visible para todos los usuarios autenticados
+    if (navBusqueda) navBusqueda.style.display = 'block';
+
+    // Usuarios, Proveedores y Tipos de Soporte: solo SUPER_ADMIN
+    if (currentUser.roles.includes('SUPER_ADMIN')) {
+        if (navUsuarios) navUsuarios.style.display = 'block';
+        if (navProveedores) navProveedores.style.display = 'block';
+        if (navTiposSoporte) navTiposSoporte.style.display = 'block';
+    }
 }
 
 // ============================================
@@ -200,6 +243,9 @@ async function showDashboard() {
     currentView = 'dashboard';
     document.getElementById('navbar').style.display = 'block';
     updateNavigation();
+
+    // Verificar si el usuario es Ruta 1 para mostrar filtro de estado
+    const esRuta1 = currentUser && currentUser.roles && currentUser.roles.includes('RUTA_1');
 
     // Renderizar estructura base inmediatamente
     document.getElementById('mainContainer').innerHTML = `
@@ -231,7 +277,7 @@ async function showDashboard() {
             
             <!-- Formulario de Búsqueda -->
             <div class="card-body" style="border-bottom: 1px solid var(--color-border);">
-                <form id="dashboardSearchForm" style="display: grid; grid-template-columns: repeat(3, 1fr) auto; gap: 1rem; align-items: end;">
+                <form id="dashboardSearchForm" style="display: grid; grid-template-columns: ${esRuta1 ? 'repeat(4, 1fr) auto' : 'repeat(3, 1fr) auto'}; gap: 1rem; align-items: end;">
                     <div class="form-group" style="margin-bottom: 0;">
                         <label class="form-label">Número de Factura</label>
                         <input type="text" id="searchNumeroFactura" class="form-input" placeholder="Ej: 12345">
@@ -244,6 +290,23 @@ async function showDashboard() {
                         <label class="form-label">Nombre Proveedor</label>
                         <input type="text" id="searchProveedor" class="form-input" placeholder="Ej: Proveedor XYZ">
                     </div>
+                    ${esRuta1 ? `
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label">Estado</label>
+                        <select id="searchEstado" class="form-select">
+                            <option value="">Todos</option>
+                            <option value="RUTA_1">Devuelta</option>
+                            <option value="RUTA_2_DIRECCION_ADMINISTRATIVA">Dirección Administrativa</option>
+                            <option value="RUTA_2_DIRECCION_FINANCIERA">Dirección Financiera</option>
+                            <option value="RUTA_2_DIRECCION_MEDICA">Dirección Médica</option>
+                            <option value="RUTA_2_CONTROL_INTERNO">Control Interno</option>
+                            <option value="RUTA_3">Contabilidad</option>
+                            <option value="RUTA_4">Tesorería</option>
+                            <option value="ANULADA">Anulada</option>
+                            <option value="FINALIZADA">Finalizada/Pagada</option>
+                        </select>
+                    </div>
+                    ` : ''}
                     <div style="display: flex; gap: 0.5rem;">
                         <button type="submit" class="btn btn-primary">🔍 Buscar</button>
                         <button type="button" id="btnLimpiarDashboard" class="btn btn-secondary">🔄 Limpiar</button>
@@ -297,7 +360,8 @@ async function handleDashboardSearch(e) {
     const filtros = {
         numero_factura: document.getElementById('searchNumeroFactura').value,
         nit: document.getElementById('searchNit').value,
-        proveedor: document.getElementById('searchProveedor').value
+        proveedor: document.getElementById('searchProveedor').value,
+        estado_codigo: document.getElementById('searchEstado')?.value || ''
     };
 
     loadRecentInvoices(filtros);
@@ -311,6 +375,7 @@ async function loadRecentInvoices(filtros = {}) {
         if (filtros.numero_factura) params.append('numero_factura', filtros.numero_factura);
         if (filtros.nit) params.append('nit', filtros.nit);
         if (filtros.proveedor) params.append('proveedor', filtros.proveedor);
+        if (filtros.estado_codigo) params.append('estado_codigo', filtros.estado_codigo);
 
         const queryString = params.toString();
         const url = queryString ? `/facturas?${queryString}` : '/facturas';
@@ -534,6 +599,7 @@ function getAvailableActions(factura) {
     const estado = factura.estado_codigo;
     const roles = currentUser.roles;
     const actions = [];
+    const estadoRetornoId = factura.estado_retorno_id; // Check if invoice was rejected
 
     // Definir roles de Ruta 2
     const rolesRuta2 = [
@@ -570,8 +636,18 @@ function getAvailableActions(factura) {
     // Si el usuario tiene el rol requerido para el estado actual
     if (requiredRole && roles.includes(requiredRole)) {
         if (estado === 'RUTA_1') {
-            actions.push('CORREGIR');
+            // Route 1: Show advanced correction if invoice was rejected
+            if (estadoRetornoId) {
+                actions.push('CORREGIR_AVANZADO');
+            }
             actions.push('ANULAR');
+        } else if (estado === 'RUTA_3') {
+            // Route 3: Show simple correction with file upload if rejected
+            if (estadoRetornoId) {
+                actions.push('CORREGIR_SIMPLE');
+            }
+            actions.push('APROBAR');
+            actions.push('RECHAZAR');
         } else {
             actions.push('APROBAR');
             actions.push('RECHAZAR');
@@ -580,6 +656,7 @@ function getAvailableActions(factura) {
 
     // Si es un estado de Ruta 2 y el usuario tiene rol de Ruta 2
     if (estadosRuta2.includes(estado) && tieneRolRuta2) {
+        // Route 2: NO correction capability, only approve/reject
         actions.push('APROBAR');
         actions.push('RECHAZAR');
     }
@@ -593,11 +670,24 @@ function getActionButtonClass(accion) {
         case 'RECHAZAR': return 'btn-danger';
         case 'ANULAR': return 'btn-danger';
         case 'CORREGIR': return 'btn-primary';
+        case 'CORREGIR_AVANZADO': return 'btn-primary';
+        case 'CORREGIR_SIMPLE': return 'btn-primary';
         default: return 'btn-secondary';
     }
 }
 
 function showActionForm(facturaId, accion, estadoActual) {
+    // Handle new correction types
+    if (accion === 'CORREGIR_AVANZADO') {
+        showCorreccionAvanzada(facturaId);
+        return;
+    }
+
+    if (accion === 'CORREGIR_SIMPLE') {
+        showCorreccionSimple(facturaId);
+        return;
+    }
+
     // Determinar si se requiere documento de soporte
     const requiereDocumento = (accion === 'APROBAR' && estadoActual === 'RUTA_3');
 
@@ -620,16 +710,6 @@ function showActionForm(facturaId, accion, estadoActual) {
                         📂 Seleccionar Archivo
                     </button>
                     <div id="archivo-seleccionado" style="margin-top: 0.5rem; color: var(--color-text-secondary); font-size: 0.875rem;"></div>
-                </div>
-            ` : ''}
-
-            ${accion === 'CORREGIR' ? `
-                <div class="form-group">
-                    <label class="form-label">Nuevo Documento (Opcional)</label>
-                    <input type="file" id="nuevoDocumento" class="form-file" style="display: none;">
-                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('nuevoDocumento').click()">
-                        📂 Seleccionar Archivo
-                    </button>
                 </div>
             ` : ''}
 
@@ -711,6 +791,313 @@ async function executeAction(facturaId, accion, requiereDocumento) {
         showToast('Error de conexión', 'error');
     }
 }
+
+// ============================================
+// CORRECTION FORMS
+// ============================================
+
+// Route 1 Advanced Correction Form
+async function showCorreccionAvanzada(facturaId) {
+    try {
+        // Load current invoice data
+        const response = await fetchAPI(`/facturas/${facturaId}`);
+        const data = await response.json();
+        const factura = data.factura;
+
+        // Load documents
+        const docsResponse = await fetchAPI(`/facturas/${facturaId}/documentos`);
+        const docsData = await docsResponse.json();
+        const documentos = docsData.documentos;
+
+        const content = `
+            <form id="correccionAvanzadaForm">
+                <h3>Editar Datos de Factura</h3>
+                <div class="grid grid-cols-2" style="gap: 1rem; margin-bottom: 1.5rem;">
+                    <div class="form-group">
+                        <label class="form-label">Número de Factura</label>
+                        <input type="text" id="editNumeroFactura" class="form-input" value="${factura.numero_factura}" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">NIT Proveedor</label>
+                        <input type="text" id="editNitProveedor" class="form-input" value="${factura.nit_proveedor}" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Fecha Emisión</label>
+                        <input type="date" id="editFechaEmision" class="form-input" value="${factura.fecha_emision.split('T')[0]}" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Monto</label>
+                        <input type="number" id="editMonto" class="form-input" value="${factura.monto}" required>
+                    </div>
+                    <div class="form-group" style="grid-column: 1 / -1;">
+                        <label class="form-label">Concepto</label>
+                        <textarea id="editConcepto" class="form-textarea">${factura.concepto || ''}</textarea>
+                    </div>
+                </div>
+
+                <h3>Documentos Actuales</h3>
+                <div id="documentosList" style="margin-bottom: 1.5rem;">
+                    ${documentos.map(doc => `
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; border: 1px solid var(--color-border); border-radius: 4px; margin-bottom: 0.5rem;">
+                            <span>📄 ${doc.nombre_personalizado} (${doc.tipo_documento})</span>
+                            ${doc.tipo_documento !== 'SOPORTE_INICIAL' && doc.tipo_documento !== 'FACTURA' ?
+                `<button type="button" class="btn btn-sm btn-danger" onclick="eliminarDocumentoCorreccion('${facturaId}', '${doc.documento_id}')">🗑️ Eliminar</button>`
+                : '<span style="color: var(--color-text-tertiary);">No eliminable</span>'}
+                        </div>
+                    `).join('')}
+                </div>
+
+                <h3>Agregar Nuevos Documentos</h3>
+                <div class="form-group">
+                    <input type="file" id="nuevosDocumentos" class="form-file" multiple style="display: none;">
+                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('nuevosDocumentos').click()">
+                        📂 Seleccionar Archivos
+                    </button>
+                    <div id="nuevosArchivosLista" style="margin-top: 0.5rem;"></div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Observación de Corrección *</label>
+                    <textarea id="observacionCorreccion" class="form-textarea" required placeholder="Describa los cambios realizados..."></textarea>
+                </div>
+
+                <div style="display: flex; gap: 0.5rem; justify-content: space-between;">
+                    <button type="button" class="btn btn-danger" onclick="eliminarFacturaCompleta('${facturaId}')">
+                        🗑️ Eliminar Factura
+                    </button>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button type="button" class="btn btn-secondary" onclick="hideModal()">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Corregir</button>
+                    </div>
+                </div>
+            </form>
+        `;
+
+        showModal('Corrección Avanzada', content);
+
+        // Show selected files
+        document.getElementById('nuevosDocumentos').addEventListener('change', (e) => {
+            const lista = document.getElementById('nuevosArchivosLista');
+            lista.innerHTML = Array.from(e.target.files).map(f => `<div>📄 ${f.name}</div>`).join('');
+        });
+
+        // Form submit
+        document.getElementById('correccionAvanzadaForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await ejecutarCorreccionAvanzada(facturaId);
+        });
+
+    } catch (error) {
+        console.error(error);
+        showToast('Error al cargar formulario de corrección', 'error');
+    }
+}
+
+async function ejecutarCorreccionAvanzada(facturaId) {
+    try {
+        // 1. Update invoice data
+        const datosActualizados = {
+            numero_factura: document.getElementById('editNumeroFactura').value,
+            nit_proveedor: document.getElementById('editNitProveedor').value,
+            fecha_emision: document.getElementById('editFechaEmision').value,
+            monto: document.getElementById('editMonto').value,
+            concepto: document.getElementById('editConcepto').value
+        };
+
+        const updateResponse = await fetchAPI(`/facturas/${facturaId}/corregir-datos`, {
+            method: 'PUT',
+            body: JSON.stringify(datosActualizados)
+        });
+
+        if (!updateResponse.ok) {
+            const error = await updateResponse.json();
+            throw new Error(error.details || 'Error al actualizar factura');
+        }
+
+        // 2. Upload new documents if any
+        const nuevosDocumentos = document.getElementById('nuevosDocumentos').files;
+        for (let file of nuevosDocumentos) {
+            const formData = new FormData();
+            formData.append('documento', file);
+            formData.append('nombre_personalizado', file.name);
+
+            await fetch(`${API_BASE_URL}/facturas/${facturaId}/documentos/correccion`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${getToken()}` },
+                body: formData
+            });
+        }
+
+        // 3. Execute correction action
+        const observacion = document.getElementById('observacionCorreccion').value;
+        const correccionResponse = await fetchAPI(`/facturas/${facturaId}/estado`, {
+            method: 'PUT',
+            body: JSON.stringify({ accion: 'CORREGIR', observacion })
+        });
+
+        if (correccionResponse.ok) {
+            showToast('Corrección realizada exitosamente', 'success');
+            hideModal();
+            if (currentView === 'dashboard') showDashboard();
+            else loadFacturas();
+        } else {
+            const error = await correccionResponse.json();
+            throw new Error(error.details || 'Error al corregir');
+        }
+
+    } catch (error) {
+        console.error(error);
+        showToast('Error: ' + error.message, 'error');
+    }
+}
+
+async function eliminarDocumentoCorreccion(facturaId, documentoId) {
+    if (!confirm('¿Está seguro de eliminar este documento?')) return;
+
+    try {
+        const response = await fetchAPI(`/facturas/${facturaId}/documentos/${documentoId}/correccion`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            showToast('Documento eliminado', 'success');
+            // Reload the correction form
+            hideModal();
+            setTimeout(() => showCorreccionAvanzada(facturaId), 100);
+        } else {
+            const error = await response.json();
+            throw new Error(error.details || 'Error al eliminar');
+        }
+    } catch (error) {
+        showToast('Error: ' + error.message, 'error');
+    }
+}
+
+// Route 3 Simple Correction (with file upload)
+function showCorreccionSimple(facturaId) {
+    const content = `
+        <form id="correccionSimpleForm">
+            <div class="form-group">
+                <label class="form-label">Observación de Corrección *</label>
+                <textarea id="observacionSimple" class="form-textarea" required placeholder="Describa la corrección realizada..."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Documento Adicional (Opcional)</label>
+                <input type="file" id="documentoSimple" class="form-file" style="display: none;">
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('documentoSimple').click()">
+                    📂 Seleccionar Archivo
+                </button>
+                <div id="archivoSimpleNombre" style="margin-top: 0.5rem; color: var(--color-text-secondary);"></div>
+            </div>
+
+            <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                <button type="button" class="btn btn-secondary" onclick="hideModal()">Cancelar</button>
+                <button type="submit" class="btn btn-primary">✓ Corregir</button>
+            </div>
+        </form>
+    `;
+
+    showModal('Corrección', content);
+
+    document.getElementById('documentoSimple').addEventListener('change', (e) => {
+        const nombre = e.target.files[0]?.name || '';
+        document.getElementById('archivoSimpleNombre').textContent = nombre ? `📄 ${nombre}` : '';
+    });
+
+    document.getElementById('correccionSimpleForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await ejecutarCorreccionSimple(facturaId);
+    });
+}
+
+async function ejecutarCorreccionSimple(facturaId) {
+    try {
+        const observacion = document.getElementById('observacionSimple').value;
+        const archivo = document.getElementById('documentoSimple').files[0];
+
+        // Upload document if provided
+        if (archivo) {
+            const formData = new FormData();
+            formData.append('documento', archivo);
+            formData.append('nombre_personalizado', archivo.name);
+            formData.append('observacion', 'Documento de corrección');
+
+            await fetch(`${API_BASE_URL}/facturas/${facturaId}/documentos/correccion`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${getToken()}` },
+                body: formData
+            });
+        }
+
+        // Execute correction
+        const response = await fetchAPI(`/facturas/${facturaId}/estado`, {
+            method: 'PUT',
+            body: JSON.stringify({ accion: 'CORREGIR', observacion })
+        });
+
+        if (response.ok) {
+            showToast('Corrección realizada exitosamente', 'success');
+            hideModal();
+            if (currentView === 'dashboard') showDashboard();
+            else loadFacturas();
+        } else {
+            const error = await response.json();
+            throw new Error(error.details || 'Error al corregir');
+        }
+    } catch (error) {
+        showToast('Error: ' + error.message, 'error');
+    }
+}
+
+// Route 2 Simple Correction (NO file upload)
+function showCorreccionSimpleRuta2(facturaId) {
+    const content = `
+        <form id="correccionRuta2Form">
+            <div class="alert alert-info" style="margin-bottom: 1rem; padding: 1rem; background-color: #e3f2fd; border-left: 4px solid #2196f3; border-radius: 4px;">
+                <strong>Nota:</strong> Como usuario de Ruta 2, solo puede agregar una observación. No puede subir documentos adicionales.
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Observación de Corrección *</label>
+                <textarea id="observacionRuta2" class="form-textarea" required placeholder="Describa la corrección realizada..."></textarea>
+            </div>
+
+            <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                <button type="button" class="btn btn-secondary" onclick="hideModal()">Cancelar</button>
+                <button type="submit" class="btn btn-primary">✓ Corregir</button>
+            </div>
+        </form>
+    `;
+
+    showModal('Corrección', content);
+
+    document.getElementById('correccionRuta2Form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const observacion = document.getElementById('observacionRuta2').value;
+
+        try {
+            const response = await fetchAPI(`/facturas/${facturaId}/estado`, {
+                method: 'PUT',
+                body: JSON.stringify({ accion: 'CORREGIR', observacion })
+            });
+
+            if (response.ok) {
+                showToast('Corrección realizada exitosamente', 'success');
+                hideModal();
+                if (currentView === 'dashboard') showDashboard();
+                else loadFacturas();
+            } else {
+                const error = await response.json();
+                throw new Error(error.details || 'Error al corregir');
+            }
+        } catch (error) {
+            showToast('Error: ' + error.message, 'error');
+        }
+    });
+}
+
 
 // ============================================
 // CARGAR FACTURA
@@ -1521,6 +1908,8 @@ function updateNavigation() {
 }
 
 function setupNavigation() {
+    console.log('🔵 setupNavigation called');
+
     document.querySelectorAll('.nav-link').forEach(link => {
         link.addEventListener('click', (e) => {
             e.preventDefault();
@@ -1547,8 +1936,14 @@ function setupNavigation() {
     });
 
     const btnLogout = document.getElementById('btnLogout');
+    console.log('🔵 btnLogout element:', btnLogout);
+
     if (btnLogout) {
+        console.log('🔵 Adding click listener to btnLogout');
         btnLogout.addEventListener('click', handleLogout);
+        console.log('✅ Logout listener added successfully');
+    } else {
+        console.error('❌ btnLogout element not found!');
     }
 
     const modalClose = document.getElementById('modalClose');
@@ -1736,6 +2131,189 @@ async function eliminarFacturaCompleta(facturaId) {
         console.error('Error al eliminar factura:', error);
         showToast('Error al eliminar factura', 'error');
     }
+}
+
+// ============================================
+// BÚSQUEDA AVANZADA
+// ============================================
+
+async function showBusquedaAvanzada() {
+    currentView = 'busqueda';
+
+    try {
+        // Cargar datos para los dropdowns
+        const [proveedoresRes, usuariosRes] = await Promise.all([
+            fetchAPI('/proveedores'),
+            fetchAPI('/usuarios')
+        ]);
+
+        const proveedoresData = await proveedoresRes.json();
+        const usuariosData = await usuariosRes.json();
+
+        const proveedores = proveedoresData.proveedores || [];
+        const usuarios = usuariosData.usuarios || [];
+
+        document.getElementById('navbar').style.display = 'flex';
+        document.getElementById('mainContainer').innerHTML = `
+            <div class="card">
+                <div class="card-header">
+                    <h1 class="card-title">Búsqueda Avanzada</h1>
+                </div>
+                
+                <div class="card-body">
+                    <form id="advancedSearchForm" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem;">
+                        <div class="form-group">
+                            <label class="form-label">Número de Factura</label>
+                            <input type="text" id="advNumeroFactura" class="form-input" placeholder="Ej: 12345">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">NIT Proveedor</label>
+                            <select id="advNit" class="form-select">
+                                <option value="">Todos</option>
+                                ${proveedores.map(p => `
+                                    <option value="${p.nit}">${p.nit} - ${p.nombre}</option>
+                                `).join('')}
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Nombre Proveedor</label>
+                            <select id="advProveedor" class="form-select">
+                                <option value="">Todos</option>
+                                ${proveedores.map(p => `
+                                    <option value="${p.nombre}">${p.nombre}</option>
+                                `).join('')}
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Usuario que Carga</label>
+                            <select id="advUsuario" class="form-select">
+                                <option value="">Todos</option>
+                                ${usuarios.map(u => `
+                                    <option value="${u.usuario_id}">${u.nombre} (${u.email})</option>
+                                `).join('')}
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Estado de Factura</label>
+                            <select id="advEstado" class="form-select">
+                                <option value="">Todos</option>
+                                <option value="RUTA_1">Devuelta</option>
+                                <option value="RUTA_2_DIRECCION_ADMINISTRATIVA">Dirección Administrativa</option>
+                                <option value="RUTA_2_DIRECCION_FINANCIERA">Dirección Financiera</option>
+                                <option value="RUTA_2_DIRECCION_MEDICA">Dirección Médica</option>
+                                <option value="RUTA_2_CONTROL_INTERNO">Control Interno</option>
+                                <option value="RUTA_3">Contabilidad</option>
+                                <option value="RUTA_4">Tesorería</option>
+                                <option value="ANULADA">Anulada</option>
+                                <option value="FINALIZADA">Finalizada/Pagada</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Monto Mayor a 2 Millones</label>
+                            <select id="advMontoMayor2M" class="form-select">
+                                <option value="">Todos</option>
+                                <option value="true">Sí</option>
+                                <option value="false">No</option>
+                            </select>
+                        </div>
+
+                        <div style="grid-column: 1 / -1; display: flex; gap: 0.5rem; justify-content: flex-end;">
+                            <button type="button" class="btn btn-secondary" onclick="limpiarBusquedaAvanzada()">🔄 Limpiar</button>
+                            <button type="submit" class="btn btn-primary">🔍 Buscar</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h2 class="card-title">Resultados</h2>
+                </div>
+                <div id="advancedSearchResults">
+                    <p class="text-center" style="padding: 2rem; color: var(--color-text-secondary);">
+                        Utiliza los filtros para buscar facturas
+                    </p>
+                </div>
+            </div>
+        `;
+
+        // Event listeners
+        document.getElementById('advancedSearchForm').addEventListener('submit', handleAdvancedSearch);
+
+        // Sincronizar NIT y Nombre de Proveedor
+        document.getElementById('advNit').addEventListener('change', (e) => {
+            const selectedNit = e.target.value;
+            if (selectedNit) {
+                const proveedor = proveedores.find(p => p.nit === selectedNit);
+                if (proveedor) {
+                    document.getElementById('advProveedor').value = proveedor.nombre;
+                }
+            }
+        });
+
+        document.getElementById('advProveedor').addEventListener('change', (e) => {
+            const selectedNombre = e.target.value;
+            if (selectedNombre) {
+                const proveedor = proveedores.find(p => p.nombre === selectedNombre);
+                if (proveedor) {
+                    document.getElementById('advNit').value = proveedor.nit;
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Error al cargar búsqueda avanzada:', error);
+        showToast('Error al cargar búsqueda avanzada', 'error');
+    }
+}
+
+async function handleAdvancedSearch(e) {
+    e.preventDefault();
+
+    const filtros = {
+        numero_factura: document.getElementById('advNumeroFactura').value,
+        nit: document.getElementById('advNit').value,
+        proveedor: document.getElementById('advProveedor').value,
+        usuario_id: document.getElementById('advUsuario').value,
+        estado: document.getElementById('advEstado').value,
+        monto_mayor_2m: document.getElementById('advMontoMayor2M').value
+    };
+
+    // Remover filtros vacíos
+    Object.keys(filtros).forEach(key => {
+        if (!filtros[key]) delete filtros[key];
+    });
+
+    try {
+        const params = new URLSearchParams(filtros);
+        const response = await fetchAPI(`/facturas?${params.toString()}`);
+        const data = await response.json();
+
+        renderInvoiceTable(data.facturas, 'advancedSearchResults');
+    } catch (error) {
+        console.error('Error en búsqueda avanzada:', error);
+        showToast('Error al realizar búsqueda', 'error');
+    }
+}
+
+function limpiarBusquedaAvanzada() {
+    document.getElementById('advNumeroFactura').value = '';
+    document.getElementById('advNit').value = '';
+    document.getElementById('advProveedor').value = '';
+    document.getElementById('advUsuario').value = '';
+    document.getElementById('advEstado').value = '';
+    document.getElementById('advMontoMayor2M').value = '';
+
+    document.getElementById('advancedSearchResults').innerHTML = `
+        <p class="text-center" style="padding: 2rem; color: var(--color-text-secondary);">
+            Utiliza los filtros para buscar facturas
+        </p>
+    `;
 }
 
 
@@ -1952,6 +2530,228 @@ function showEditarProveedor(id, nit, nombre, direccion, telefono, email, isActi
             showToast('Error de conexión', 'error');
         }
     });
+}
+
+// ============================================
+// GESTIÓN DE TIPOS DE SOPORTE (SUPER_ADMIN)
+// ============================================
+
+async function showTiposSoporte() {
+    if (!currentUser || !currentUser.roles.includes('SUPER_ADMIN')) {
+        showToast('No tienes permisos para acceder a esta sección', 'error');
+        return;
+    }
+
+    updateNavigation();
+
+    document.getElementById('mainContainer').innerHTML = `
+        <div class="card">
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <h1 class="card-title">Gestión de Tipos de Soporte</h1>
+                <button class="btn btn-primary" onclick="showCrearTipoSoporte()">
+                    + Nuevo Tipo de Soporte
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="table-container">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Código</th>
+                                <th>Nombre</th>
+                                <th>Descripción</th>
+                                <th>Orden</th>
+                                <th>Estado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tiposSoporteTableBody">
+                            <tr>
+                                <td colspan="6" class="text-center">Cargando tipos de soporte...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    `;
+
+    try {
+        const response = await fetchAPI('/tipos-soporte?activos=false'); // Cargar todos
+        const data = await response.json();
+        const tipos = data.tipos || [];
+
+        const tbody = document.getElementById('tiposSoporteTableBody');
+        if (tipos.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">No hay tipos de soporte registrados</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = tipos.map(tipo => `
+            <tr>
+                <td>${tipo.codigo}</td>
+                <td>${tipo.nombre}</td>
+                <td>${tipo.descripcion || '-'}</td>
+                <td>${tipo.orden}</td>
+                <td>
+                    <span class="badge ${tipo.activo ? 'badge-success' : 'badge-error'}">
+                        ${tipo.activo ? 'Activo' : 'Inactivo'}
+                    </span>
+                </td>
+                <td>
+                    <button class="btn btn-sm btn-secondary" onclick='showEditarTipoSoporte(${JSON.stringify(tipo)})'>
+                        Editar
+                    </button>
+                    <button class="btn btn-sm ${tipo.activo ? 'btn-warning' : 'badge-success'}" 
+                            onclick="toggleTipoSoporteActivo(${tipo.tipo_soporte_id}, ${!tipo.activo})">
+                        ${tipo.activo ? 'Desactivar' : 'Activar'}
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    } catch (error) {
+        console.error('Error al cargar tipos de soporte:', error);
+        document.getElementById('tiposSoporteTableBody').innerHTML =
+            '<tr><td colspan="6" class="text-center" style="color: var(--color-error)">Error al cargar datos</td></tr>';
+    }
+}
+
+function showCrearTipoSoporte() {
+    const content = `
+        <form id="crearTipoSoporteForm">
+            <div class="form-group">
+                <label class="form-label">Código *</label>
+                <input type="text" id="tipoCodigo" class="form-input" required placeholder="Ej: CONTRATO">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Nombre *</label>
+                <input type="text" id="tipoNombre" class="form-input" required placeholder="Ej: Contrato">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Descripción</label>
+                <textarea id="tipoDescripcion" class="form-input" rows="3" placeholder="Descripción del tipo de soporte"></textarea>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Orden</label>
+                <input type="number" id="tipoOrden" class="form-input" value="0" min="0">
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="hideModal()">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Guardar</button>
+            </div>
+        </form>
+    `;
+
+    showModal('Nuevo Tipo de Soporte', content);
+
+    document.getElementById('crearTipoSoporteForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const data = {
+            codigo: document.getElementById('tipoCodigo').value.toUpperCase(),
+            nombre: document.getElementById('tipoNombre').value,
+            descripcion: document.getElementById('tipoDescripcion').value,
+            orden: parseInt(document.getElementById('tipoOrden').value) || 0
+        };
+
+        try {
+            const response = await fetchAPI('/tipos-soporte', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                showToast('Tipo de soporte creado exitosamente', 'success');
+                hideModal();
+                showTiposSoporte();
+            } else {
+                const error = await response.json();
+                showToast(error.error || 'Error al crear tipo de soporte', 'error');
+            }
+        } catch (error) {
+            console.error(error);
+            showToast('Error de conexión', 'error');
+        }
+    });
+}
+
+function showEditarTipoSoporte(tipo) {
+    const content = `
+        <form id="editarTipoSoporteForm">
+            <div class="form-group">
+                <label class="form-label">Código *</label>
+                <input type="text" id="tipoCodigo" class="form-input" value="${tipo.codigo}" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Nombre *</label>
+                <input type="text" id="tipoNombre" class="form-input" value="${tipo.nombre}" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Descripción</label>
+                <textarea id="tipoDescripcion" class="form-input" rows="3">${tipo.descripcion || ''}</textarea>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Orden</label>
+                <input type="number" id="tipoOrden" class="form-input" value="${tipo.orden}" min="0">
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="hideModal()">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Actualizar</button>
+            </div>
+        </form>
+    `;
+
+    showModal('Editar Tipo de Soporte', content);
+
+    document.getElementById('editarTipoSoporteForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const data = {
+            codigo: document.getElementById('tipoCodigo').value.toUpperCase(),
+            nombre: document.getElementById('tipoNombre').value,
+            descripcion: document.getElementById('tipoDescripcion').value,
+            orden: parseInt(document.getElementById('tipoOrden').value) || 0
+        };
+
+        try {
+            const response = await fetchAPI(`/tipos-soporte/${tipo.tipo_soporte_id}`, {
+                method: 'PUT',
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                showToast('Tipo de soporte actualizado exitosamente', 'success');
+                hideModal();
+                showTiposSoporte();
+            } else {
+                const error = await response.json();
+                showToast(error.error || 'Error al actualizar tipo de soporte', 'error');
+            }
+        } catch (error) {
+            console.error(error);
+            showToast('Error de conexión', 'error');
+        }
+    });
+}
+
+async function toggleTipoSoporteActivo(id, nuevoEstado) {
+    try {
+        const response = await fetchAPI(`/tipos-soporte/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ activo: nuevoEstado })
+        });
+
+        if (response.ok) {
+            showToast(`Tipo de soporte ${nuevoEstado ? 'activado' : 'desactivado'} exitosamente`, 'success');
+            showTiposSoporte();
+        } else {
+            const error = await response.json();
+            showToast(error.error || 'Error al cambiar estado', 'error');
+        }
+    } catch (error) {
+        console.error(error);
+        showToast('Error de conexión', 'error');
+    }
 }
 
 // ============================================
@@ -2282,21 +3082,9 @@ function detenerPolling() {
     ultimoContador = 0;
 }
 
-
-// ============================================
-// NAVEGACIÓN Y LOGOUT
-// ============================================
-
-function handleLogout() {
-    // Detener sistema de notificaciones
-    // detenerPolling(); // TODO: Implementar si es necesario
-
-    removeToken();
-    currentUser = null;
-    showToast('Sesión cerrada exitosamente', 'info');
-    showLogin();
-}
-
+/**
+ * Configurar navegación
+ */
 function setupNavigation() {
     document.querySelectorAll('.nav-link').forEach(link => {
         link.addEventListener('click', (e) => {
@@ -2330,24 +3118,9 @@ function setupNavigation() {
             }
         });
     });
-
-    // Conectar botón de logout
-    const btnLogout = document.getElementById('btnLogout');
-    if (btnLogout) {
-        btnLogout.addEventListener('click', handleLogout);
-    }
-
-    // Conectar botón de cerrar modal
-    const modalClose = document.getElementById('modalClose');
-    if (modalClose) {
-        modalClose.addEventListener('click', hideModal);
-    }
 }
 
-// ============================================
-// INICIALIZACIÓN
-// ============================================
-
+// Inicialización de la aplicación
 document.addEventListener('DOMContentLoaded', () => {
     setupNavigation();
     const token = getToken();
@@ -2362,7 +3135,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showDashboard();
 
             // Iniciar sistema de notificaciones
-            iniciarPolling();
+            // iniciarPolling(); // TODO: Implementar sistema de notificaciones
         } catch (error) {
             removeToken();
             showLogin();

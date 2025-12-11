@@ -106,7 +106,8 @@ const listarFacturas = async (req, res) => {
             busqueda: req.query.busqueda || null,
             numero_factura: req.query.numero_factura || null,
             nit: req.query.nit || null,
-            proveedor: req.query.proveedor || null
+            proveedor: req.query.proveedor || null,
+            estado_codigo: req.query.estado_codigo || null
         };
 
         const facturas = await facturaService.listarFacturas(filtros, userId);
@@ -161,7 +162,7 @@ const obtenerFactura = async (req, res) => {
 const procesarEstado = async (req, res) => {
     try {
         const { id } = req.params;
-        const { accion, observacion, estadoDestinoRechazoCodigo } = req.body;
+        const { accion, observacion } = req.body;
         const userId = req.user.usuario_id;
 
         if (!accion) {
@@ -172,8 +173,7 @@ const procesarEstado = async (req, res) => {
         }
 
         const resultado = await facturaService.procesarFactura(id, accion, userId, {
-            observacion,
-            estadoDestinoRechazoCodigo
+            observacion
         });
 
         res.status(200).json({
@@ -561,6 +561,134 @@ const contarPendientes = async (req, res) => {
     }
 };
 
+/**
+ * Corregir datos de factura (Solo Ruta 1)
+ */
+const corregirFacturaRuta1 = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const userId = req.user.usuario_id;
+        const datosActualizados = req.body;
+
+        const resultado = await facturaService.corregirFacturaRuta1(id, datosActualizados, userId);
+
+        res.status(200).json({
+            success: true,
+            message: 'Factura actualizada exitosamente',
+            factura: resultado
+        });
+
+    } catch (error) {
+        console.error('Error al corregir factura:', error);
+
+        if (error.message.includes('no encontrada')) {
+            return res.status(404).json({ error: 'Factura no encontrada', details: error.message });
+        }
+        if (error.message.includes('Solo')) {
+            return res.status(403).json({ error: 'Permiso denegado', details: error.message });
+        }
+        if (error.message.includes('no existe')) {
+            return res.status(400).json({ error: 'Datos inválidos', details: error.message });
+        }
+
+        res.status(500).json({
+            error: 'Error al corregir factura',
+            details: error.message
+        });
+    }
+};
+
+/**
+ * Eliminar documento durante corrección (Solo Ruta 1)
+ */
+const eliminarDocumentoCorreccion = async (req, res) => {
+    try {
+        const { facturaId, documentoId } = req.params;
+        const userId = req.user.usuario_id;
+
+        const resultado = await facturaService.eliminarDocumentoRuta1(documentoId, facturaId, userId);
+
+        res.status(200).json({
+            success: true,
+            ...resultado
+        });
+
+    } catch (error) {
+        console.error('Error al eliminar documento:', error);
+
+        if (error.message.includes('no encontrada') || error.message.includes('no encontrado')) {
+            return res.status(404).json({ error: 'Documento o factura no encontrada', details: error.message });
+        }
+        if (error.message.includes('Solo')) {
+            return res.status(403).json({ error: 'Permiso denegado', details: error.message });
+        }
+        if (error.message.includes('No se pueden eliminar')) {
+            return res.status(400).json({ error: 'Operación no permitida', details: error.message });
+        }
+
+        res.status(500).json({
+            error: 'Error al eliminar documento',
+            details: error.message
+        });
+    }
+};
+
+/**
+ * Agregar documento de corrección (Ruta 1 o 3)
+ */
+const agregarDocumentoCorreccion = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({
+                error: 'Archivo requerido',
+                details: 'Debe enviar un archivo.'
+            });
+        }
+
+        const { id } = req.params;
+        const { nombre_personalizado, observacion } = req.body;
+        const userId = req.user.usuario_id;
+
+        const documento = await facturaService.agregarDocumentoCorreccion(
+            id,
+            req.file,
+            nombre_personalizado,
+            userId,
+            observacion
+        );
+
+        res.status(201).json({
+            success: true,
+            message: 'Documento de corrección agregado exitosamente',
+            documento
+        });
+
+    } catch (error) {
+        console.error('Error al agregar documento de corrección:', error);
+
+        // Limpieza de archivo si falla
+        if (req.file) {
+            const UPLOAD_DIR = 'D:\\FacturasClinica';
+            const filePath = path.join(UPLOAD_DIR, req.file.filename);
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
+        }
+
+        if (error.message.includes('no encontrada')) {
+            return res.status(404).json({ error: 'Factura no encontrada', details: error.message });
+        }
+        if (error.message.includes('Solo') || error.message.includes('no puede agregar')) {
+            return res.status(403).json({ error: 'Permiso denegado', details: error.message });
+        }
+
+        res.status(500).json({
+            error: 'Error al agregar documento de corrección',
+            details: error.message
+        });
+    }
+};
+
 module.exports = {
     cargarFactura,
     listarFacturas,
@@ -575,6 +703,9 @@ module.exports = {
     descargarDocumento,
     eliminarFactura,
     busquedaAvanzada,
-    contarPendientes
+    contarPendientes,
+    corregirFacturaRuta1,
+    eliminarDocumentoCorreccion,
+    agregarDocumentoCorreccion
 };
 

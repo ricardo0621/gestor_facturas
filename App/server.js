@@ -14,6 +14,7 @@ const authRoutes = require('./routes/auth.route');
 const facturaRoutes = require('./routes/factura.route');
 const usuarioRoutes = require('./routes/usuario.route');
 const proveedorRoutes = require('./routes/proveedor.route');
+const tipoSoporteRoutes = require('./routes/tipoSoporte.route');
 
 // =============================================================
 // 2. CONFIGURACIÓN INICIAL DE EXPRESS
@@ -61,6 +62,9 @@ app.use('/api/usuarios', usuarioRoutes);
 
 // Rutas de Proveedores
 app.use('/api/proveedores', proveedorRoutes);
+
+// Rutas de Tipos de Soporte
+app.use('/api/tipos-soporte', tipoSoporteRoutes);
 
 // =============================================================
 // 6. MANEJO DE RUTA NO ENCONTRADA (404)
