@@ -1,0 +1,44 @@
+[
+  {
+    "usuario_id": "f9d2d7c0-1c3b-4e1a-8b0a-7c9e0d1f2a3b",
+    "tipo": "string",
+    "email": "admin@sistema.com",
+    "nombre": "Super Admin",
+    "rol": "RUTA_1"
+  },
+  {
+    "usuario_id": "f9d2d7c0-1c3b-4e1a-8b0a-7c9e0d1f2a3b",
+    "tipo": "string",
+    "email": "admin@sistema.com",
+    "nombre": "Super Admin",
+    "rol": "RUTA_2"
+  },
+  {
+    "usuario_id": "f9d2d7c0-1c3b-4e1a-8b0a-7c9e0d1f2a3b",
+    "tipo": "string",
+    "email": "admin@sistema.com",
+    "nombre": "Super Admin",
+    "rol": "RUTA_3"
+  },
+  {
+    "usuario_id": "f9d2d7c0-1c3b-4e1a-8b0a-7c9e0d1f2a3b",
+    "tipo": "string",
+    "email": "admin@sistema.com",
+    "nombre": "Super Admin",
+    "rol": "RUTA_4"
+  },
+  {
+    "usuario_id": "f9d2d7c0-1c3b-4e1a-8b0a-7c9e0d1f2a3b",
+    "tipo": "string",
+    "email": "admin@sistema.com",
+    "nombre": "Super Admin",
+    "rol": "SUPER_ADMIN"
+  },
+  {
+    "usuario_id": "f9d2d7c0-1c3b-4e1a-8b0a-7c9e0d1f2a3b",
+    "tipo": "string",
+    "email": "admin@sistema.com",
+    "nombre": "Super Admin",
+    "rol": "BUSQUEDA_FACTURAS"
+  }
+]

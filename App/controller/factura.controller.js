@@ -102,6 +102,7 @@ const cargarFactura = async (req, res) => {
 const listarFacturas = async (req, res) => {
     try {
         const userId = req.user.usuario_id;
+
         const filtros = {
             busqueda: req.query.busqueda || null,
             numero_factura: req.query.numero_factura || null,

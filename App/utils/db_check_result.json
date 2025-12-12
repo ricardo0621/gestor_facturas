@@ -1,0 +1,13 @@
+{
+  "schema": {
+    "column_name": "usuario_id",
+    "data_type": "uuid",
+    "udt_name": "uuid"
+  },
+  "example_user": {
+    "usuario_id": "f9d2d7c0-1c3b-4e1a-8b0a-7c9e0d1f2a3b",
+    "email": "admin@sistema.com"
+  },
+  "usuario_id_type": "string",
+  "usuario_id_value": "f9d2d7c0-1c3b-4e1a-8b0a-7c9e0d1f2a3b"
+}

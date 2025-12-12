@@ -1,0 +1,46 @@
+﻿[dotenv@17.2.3] injecting env (3) from .env -- tip: ­ƒöä add secrets lifecycle management: https://dotenvx.com/ops
+ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+  MIGRACI├ôN ALTERNATIVA: Usuario Admin INTEGER ÔåÆ UUID
+ÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉÔòÉ
+
+­ƒöä Iniciando migraci├│n del usuario administrador...
+
+node : 
+En línea: 1 Carácter: 
+1
++ node utils/migrate_a
+dmin_to_uuid_v2.js 
+2>&1 | Out-File 
+-FilePath util ...
++ ~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~
+    + CategoryInfo    
+          : NotSpeci  
+  fied: (:String) [   
+ ], RemoteExceptio    
+n
+    + FullyQualifiedE 
+   rrorId : NativeCo  
+  mmandError
+ 
+ÔØî Error durante la 
+migraci├│n: operator 
+does not exist: uuid 
+= integer
+Detalle: N/A
+Stack: error: 
+operator does not 
+exist: uuid = integer
+    at D:\Gestor_Factu
+ras\App\node_modules\p
+g\lib\client.js:545:17
+    at process.process
+TicksAndRejections (no
+de:internal/process/ta
+sk_queues:105:5)
+    at async 
+migrateAdminToUUID (D:
+\Gestor_Facturas\App\u
+tils\migrate_admin_to_
+uuid_v2.js:18:28)
