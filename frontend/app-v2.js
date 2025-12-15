@@ -513,11 +513,11 @@ async function viewInvoiceDetails(facturaId) {
                 `<button class="btn btn-success" onclick="hideModal(); setTimeout(() => showFormularioPago('${facturaId}'), 100)">
                         💳 Marcar como Pagada
                     </button>` : ''}
-                ${acciones.map(accion => `
+                ${!currentUser.roles.includes('BUSQUEDA_AVANZADA') ? acciones.map(accion => `
                     <button class="btn ${getActionButtonClass(accion)}" onclick="showActionForm('${facturaId}', '${accion}', '${factura.estado_codigo}')">
                         ${accion}
                     </button>
-                `).join('')}
+                `).join('') : ''}
             </div>
         `;
 
@@ -842,19 +842,18 @@ async function renderArchivos() {
     tiposSoporteOptions += '<option value="FACTURA">Factura</option>'; // Siempre incluir FACTURA
 
     try {
-        console.log('🔍 DEBUG: Cargando tipos de soporte...');
+
         const response = await fetchAPI('/tipos-soporte');
         const data = await response.json();
         const tipos = data.tipos || [];
 
-        console.log('📊 DEBUG: Tipos recibidos:', tipos.length);
-        console.log('📋 DEBUG: Datos completos:', JSON.stringify(tipos, null, 2));
+
 
         // Agregar tipos de soporte activos (excepto FACTURA que ya está)
         tipos.forEach(tipo => {
             if (tipo.activo && tipo.codigo !== 'FACTURA') {
                 tiposSoporteOptions += `<option value="${tipo.codigo}">${tipo.nombre}</option>`;
-                console.log(`✅ DEBUG: Agregado ${tipo.codigo} - ${tipo.nombre}`);
+
             }
         });
     } catch (error) {
@@ -995,46 +994,6 @@ function mostrarArchivosSeleccionados() {
     renderArchivos();
 }
 
-function renderArchivos() {
-    const container = document.getElementById('archivos-lista');
-
-    if (archivosSeleccionados.length === 0) {
-        container.innerHTML = '<p style="color: var(--color-text-tertiary); text-align: center;">No hay archivos seleccionados</p>';
-        return;
-    }
-
-    let html = '<div class="archivos-grid">';
-    archivosSeleccionados.forEach((file, index) => {
-        html += `
-            <div class="archivo-item" id="archivo-${index}">
-                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem;">
-                    <div class="archivo-nombre" style="flex: 1; word-break: break-word;">
-                        📄 ${file.name}
-                        <small style="display: block; color: var(--color-text-tertiary); font-size: 0.75rem;">
-                            ${(file.size / 1024).toFixed(2)} KB
-                        </small>
-                    </div>
-                    <button type="button" class="btn btn-sm btn-danger" onclick="eliminarArchivo(${index})" 
-                            style="padding: 0.25rem 0.5rem; margin-left: 0.5rem;">
-                        ✕
-                    </button>
-                </div>
-                <select id="tipo-${index}" class="archivo-tipo">
-                    <option value="">Seleccionar tipo...</option>
-                    <option value="FACTURA" ${index === 0 ? 'selected' : ''}>Factura</option>
-                    <option value="SOPORTE">Soporte</option>
-                    <option value="DISTRIBUCION_GASTO">Distribución de Gasto</option>
-                    <option value="OTRO">Otro</option>
-                </select>
-            </div>
-        `;
-    });
-    html += '</div>';
-    html += `<p style="margin-top: 1rem; color: var(--color-text-secondary); font-size: 0.875rem;">
-        Total de archivos: ${archivosSeleccionados.length}
-    </p>`;
-    container.innerHTML = html;
-}
 
 function eliminarArchivo(index) {
     archivosSeleccionados.splice(index, 1);

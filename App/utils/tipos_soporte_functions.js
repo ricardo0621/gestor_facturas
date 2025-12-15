@@ -1,24 +1,17 @@
-/**
- * Vista de Gestión de Tipos de Soporte (SUPER_ADMIN)
- */
-
-import { fetchAPI } from '../services/api.service.js';
-import { showToast } from '../components/toast.js';
-import * as tipoSoporteService from '../services/tipoSoporte.service.js';
+// ============================================
+// TIPOS DE SOPORTE (SUPER_ADMIN)
+// ============================================
 
 /**
- * Mostrar vista de tipos de soporte
+ * Mostrar vista de gestión de tipos de soporte
  */
-export async function showTiposSoporte() {
-    const currentUser = window.currentUser;
+async function showTiposSoporte() {
+    currentView = 'tiposSoporte';
 
     if (!currentUser || !currentUser.roles.includes('SUPER_ADMIN')) {
         showToast('No tienes permisos para acceder a esta sección', 'error');
+        showDashboard();
         return;
-    }
-
-    if (typeof window.updateNavigation === 'function') {
-        window.updateNavigation();
     }
 
     document.getElementById('mainContainer').innerHTML = `
@@ -75,7 +68,9 @@ async function cargarTiposSoporte() {
     const mostrarInactivos = document.getElementById('mostrarInactivos')?.checked || false;
 
     try {
-        const data = await tipoSoporteService.listarTiposSoporte(!mostrarInactivos);
+        const url = mostrarInactivos ? '/tipos-soporte?activos=false' : '/tipos-soporte';
+        const response = await fetchAPI(url);
+        const data = await response.json();
         const tipos = data.tipos || [];
 
         const tbody = document.getElementById('tiposSoporteTableBody');
@@ -96,11 +91,11 @@ async function cargarTiposSoporte() {
                     </span>
                 </td>
                 <td>
-                    <button class="btn btn-sm btn-secondary" onclick="window.editarTipoSoporte(${tipo.tipo_soporte_id})">
+                    <button class="btn btn-sm btn-secondary" onclick="editarTipoSoporte(${tipo.tipo_soporte_id})">
                         ✏️ Editar
                     </button>
                     <button class="btn btn-sm ${tipo.activo ? 'btn-warning' : 'btn-success'}" 
-                            onclick="window.toggleTipoSoporteActivo(${tipo.tipo_soporte_id}, ${!tipo.activo})">
+                            onclick="toggleTipoSoporteActivo(${tipo.tipo_soporte_id}, ${!tipo.activo})">
                         ${tipo.activo ? '🚫 Desactivar' : '✅ Activar'}
                     </button>
                 </td>
@@ -123,7 +118,8 @@ async function showModalTipoSoporte(tipoId = null) {
 
     if (tipoId) {
         try {
-            const data = await tipoSoporteService.obtenerTipoSoporte(tipoId);
+            const response = await fetchAPI(`/tipos-soporte/${tipoId}`);
+            const data = await response.json();
             tipo = data.tipo;
             titulo = 'Editar Tipo de Soporte';
         } catch (error) {
@@ -180,7 +176,7 @@ async function showModalTipoSoporte(tipoId = null) {
             ` : ''}
 
             <div class="modal-actions">
-                <button type="button" class="btn btn-secondary" onclick="window.hideModal()">Cancelar</button>
+                <button type="button" class="btn btn-secondary" onclick="hideModal()">Cancelar</button>
                 <button type="submit" class="btn btn-primary">
                     ${tipo ? 'Actualizar' : 'Crear'}
                 </button>
@@ -188,7 +184,7 @@ async function showModalTipoSoporte(tipoId = null) {
         </form>
     `;
 
-    window.showModal(titulo, content);
+    showModal(titulo, content);
 
     document.getElementById('formTipoSoporte').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -212,20 +208,34 @@ async function guardarTipoSoporte(tipoId) {
     }
 
     try {
-        if (tipoId) {
-            await tipoSoporteService.actualizarTipoSoporte(tipoId, data);
-            showToast('Tipo de soporte actualizado exitosamente', 'success');
-        } else {
-            await tipoSoporteService.crearTipoSoporte(data);
-            showToast('Tipo de soporte creado exitosamente', 'success');
-        }
+        const url = tipoId ? `/tipos-soporte/${tipoId}` : '/tipos-soporte';
+        const method = tipoId ? 'PUT' : 'POST';
 
-        window.hideModal();
-        await cargarTiposSoporte();
+        const response = await fetchAPI(url, {
+            method,
+            body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            showToast(tipoId ? 'Tipo de soporte actualizado exitosamente' : 'Tipo de soporte creado exitosamente', 'success');
+            hideModal();
+            await cargarTiposSoporte();
+        } else {
+            showToast(result.error || 'Error al guardar tipo de soporte', 'error');
+        }
     } catch (error) {
         console.error('Error al guardar tipo de soporte:', error);
-        showToast(error.message || 'Error al guardar tipo de soporte', 'error');
+        showToast('Error al guardar tipo de soporte', 'error');
     }
+}
+
+/**
+ * Editar tipo de soporte
+ */
+function editarTipoSoporte(tipoId) {
+    showModalTipoSoporte(tipoId);
 }
 
 /**
@@ -239,16 +249,21 @@ async function toggleTipoSoporteActivo(tipoId, nuevoEstado) {
     }
 
     try {
-        await tipoSoporteService.toggleTipoSoporte(tipoId, nuevoEstado);
-        showToast(`Tipo de soporte ${nuevoEstado ? 'activado' : 'desactivado'} exitosamente`, 'success');
-        await cargarTiposSoporte();
+        const response = await fetchAPI(`/tipos-soporte/${tipoId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ activo: nuevoEstado })
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            showToast(`Tipo de soporte ${nuevoEstado ? 'activado' : 'desactivado'} exitosamente`, 'success');
+            await cargarTiposSoporte();
+        } else {
+            showToast(result.error || 'Error al cambiar estado', 'error');
+        }
     } catch (error) {
         console.error('Error al cambiar estado:', error);
         showToast('Error al cambiar estado del tipo de soporte', 'error');
     }
 }
-
-// Exportar funciones globales
-window.showTiposSoporte = showTiposSoporte;
-window.editarTipoSoporte = (id) => showModalTipoSoporte(id);
-window.toggleTipoSoporteActivo = toggleTipoSoporteActivo;
