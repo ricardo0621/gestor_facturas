@@ -513,11 +513,11 @@ async function viewInvoiceDetails(facturaId) {
                 `<button class="btn btn-success" onclick="hideModal(); setTimeout(() => showFormularioPago('${facturaId}'), 100)">
                         💳 Marcar como Pagada
                     </button>` : ''}
-                ${acciones.map(accion => `
+                ${currentView !== 'busqueda' ? acciones.map(accion => `
                     <button class="btn ${getActionButtonClass(accion)}" onclick="showActionForm('${facturaId}', '${accion}', '${factura.estado_codigo}')">
                         ${accion}
                     </button>
-                `).join('')}
+                `).join('') : ''}
             </div>
         `;
 

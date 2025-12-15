@@ -467,6 +467,19 @@ async function viewInvoiceDetails(facturaId) {
         // Determinar acciones disponibles
         const acciones = getAvailableActions(factura);
 
+        // DEBUG: Verificar roles del usuario
+        console.log('🔍 DEBUG - Roles del usuario:', currentUser.roles);
+        console.log('🔍 DEBUG - Roles (JSON):', JSON.stringify(currentUser.roles));
+        console.log('🔍 DEBUG - Primer rol:', currentUser.roles[0]);
+        console.log('🔍 DEBUG - Primer rol (length):', currentUser.roles[0]?.length);
+        console.log('🔍 DEBUG - Tiene BUSQUEDA_AVANZADA?', currentUser.roles.includes('BUSQUEDA_AVANZADA'));
+        console.log('🔍 DEBUG - Acciones disponibles:', acciones);
+
+        // Verificar si tiene rol de búsqueda (con trim por si hay espacios)
+        const esBusquedaAvanzada = currentUser.roles.some(rol => rol.trim() === 'BUSQUEDA_AVANZADA');
+        console.log('🔍 DEBUG - Es búsqueda (con trim)?', esBusquedaAvanzada);
+        console.log('🔍 DEBUG - Mostrar botones?', !esBusquedaAvanzada);
+
         const content = `
             <div style="margin-bottom: 1.5rem;">
                 <div class="grid grid-cols-2" style="gap: 1rem;">
@@ -513,7 +526,7 @@ async function viewInvoiceDetails(facturaId) {
                 `<button class="btn btn-success" onclick="hideModal(); setTimeout(() => showFormularioPago('${facturaId}'), 100)">
                         💳 Marcar como Pagada
                     </button>` : ''}
-                ${!currentUser.roles.includes('BUSQUEDA_AVANZADA') ? acciones.map(accion => `
+                ${currentView !== 'busqueda' ? acciones.map(accion => `
                     <button class="btn ${getActionButtonClass(accion)}" onclick="showActionForm('${facturaId}', '${accion}', '${factura.estado_codigo}')">
                         ${accion}
                     </button>
